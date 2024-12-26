@@ -1,4 +1,7 @@
+import { CreateStablecoin } from "./components/CreateStablecoin";
+import { Features } from "./components/Features";
 import { Header } from "./components/Header";
+import { StablecoinList } from "./components/StablecoinList";
 
 function App() {
   return (
@@ -14,8 +17,12 @@ function App() {
             Launch your custom stablecoin backed by yield-bearing Stablebonds.
             Earn passive income while maintaining stability.
           </p>
+
+          <Features />
+          <CreateStablecoin />
           
           <h2 className="text-2xl font-bold mb-6">Your Stablecoins</h2>
+          <StablecoinList />
         </div>
       </main>
     </div>
