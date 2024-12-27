@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { StablebondProgram } from '@etherfuse/stablebond-sdk';
+import { useConnection } from '@solana/wallet-adapter-react';
 
 type Stablecoin = {
   name: string;
@@ -10,6 +12,7 @@ type Stablecoin = {
 };
 
 export const StablecoinList = () => {
+  const { connection } = useConnection();
   const { publicKey } = useWallet();
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,8 +22,27 @@ export const StablecoinList = () => {
       if (!publicKey) return;
       
       try {
-        // TODO: Fetch user's stablecoins using Etherfuse SDK
-        setStablecoins([]);
+        const program = new StablebondProgram(connection.rpcEndpoint, {
+          publicKey,
+          sendTransaction: async () => { /* Implement later */ }
+        });
+
+        // Get user's bond balances
+        const balances = await program.getUserBondBalances();
+        const bonds = await StablebondProgram.getBonds(connection.rpcEndpoint);
+        
+        // Map bonds to stablecoins format
+        const userStablecoins = bonds
+          .filter(bond => balances.has(bond.mint))
+          .map(bond => ({
+            name: bond.name,
+            symbol: bond.symbol,
+            currency: bond.currency,
+            icon: bond.icon || '/default-coin.png',
+            supply: Number(balances.get(bond.mint) || 0)
+          }));
+
+        setStablecoins(userStablecoins);
       } catch (error) {
         console.error('Failed to fetch stablecoins:', error);
       } finally {
@@ -29,7 +51,7 @@ export const StablecoinList = () => {
     };
 
     fetchStablecoins();
-  }, [publicKey]);
+  }, [publicKey, connection]);
 
   if (loading) {
     return (
