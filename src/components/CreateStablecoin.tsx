@@ -4,9 +4,12 @@ import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
+import { StablecoinProgram } from '@etherfuse/stablecoin-program';
+import { PublicKey } from '@solana/web3.js';
+
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, wallet } = useWallet();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -40,37 +43,21 @@ export const CreateStablecoin = () => {
     
     setLoading(true);
     try {
-      const program = new StablebondProgram(connection.rpcEndpoint, {
+      const program = new StablecoinProgram(connection, {
         publicKey,
-        sendTransaction: async (transaction, connection) => {
-          try {
-            const signature = await sendTransaction(transaction, connection);
-            return { signature };
-          } catch (error) {
-            console.error('Transaction failed:', error);
-            throw error;
-          }
-        }
+        signTransaction: wallet.signTransaction,
+        signAllTransactions: wallet.signAllTransactions,
       });
 
-      // Verify bond ownership
-      const bondBalance = await program.getBondBalance(formData.bondMint);
-      if (!bondBalance || bondBalance.isZero()) {
-        throw new Error('You need to own Stablebonds to create a stablecoin');
-      }
-
-      // Create stablecoin with proper parameters
-      const tx = await program.createStablecoin({
+      const result = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol.toUpperCase(),
-        bondMint: formData.bondMint,
-        iconUrl: formData.icon || undefined,
-        decimals: 6, // Standard for Solana tokens
-        initialSupply: bondBalance // Use bond balance as initial supply
+        decimals: 6,
+        iconUrl: formData.icon,
+        targetCurrency: formData.currency,
+        bondMint: new PublicKey(formData.bondMint),
       });
 
-      await tx.confirm('confirmed');
-      
       toast.success('Stablecoin created successfully!');
       setFormData({ name: '', symbol: '', currency: 'USD', icon: '', bondMint: '' });
     } catch (error) {
