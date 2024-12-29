@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
+import { toast } from 'react-hot-toast';
 
 type Stablecoin = {
   name: string;
@@ -9,11 +10,12 @@ type Stablecoin = {
   currency: string;
   icon: string;
   supply: number;
+  mint: string;
 };
 
 export const StablecoinList = () => {
   const { connection } = useConnection();
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,27 +26,41 @@ export const StablecoinList = () => {
       try {
         const program = new StablebondProgram(connection.rpcEndpoint, {
           publicKey,
-          sendTransaction: async () => { /* Implement later */ }
+          sendTransaction: async (transaction, connection) => {
+            throw new Error('Not implemented');
+          }
         });
 
-        // Get user's bond balances
-        const balances = await program.getUserBondBalances();
+        // Get all bonds first
         const bonds = await StablebondProgram.getBonds(connection.rpcEndpoint);
         
-        // Map bonds to stablecoins format
-        const userStablecoins = bonds
-          .filter(bond => balances.has(bond.mint))
-          .map(bond => ({
-            name: bond.name,
-            symbol: bond.symbol,
-            currency: bond.currency,
-            icon: bond.icon || '/default-coin.png',
-            supply: Number(balances.get(bond.mint) || 0)
-          }));
+        // Get user's stablecoins and their balances
+        const userStablecoins = await Promise.all(
+          bonds.map(async (bond) => {
+            try {
+              const balance = await program.getBondBalance(bond.mint);
+              if (balance && !balance.isZero()) {
+                return {
+                  name: bond.name,
+                  symbol: bond.symbol,
+                  currency: bond.currency,
+                  icon: bond.icon || '/default-coin.png',
+                  supply: balance.toNumber(),
+                  mint: bond.mint
+                };
+              }
+              return null;
+            } catch (error) {
+              console.error(`Error fetching balance for ${bond.symbol}:`, error);
+              return null;
+            }
+          })
+        );
 
-        setStablecoins(userStablecoins);
+        setStablecoins(userStablecoins.filter((coin): coin is Stablecoin => coin !== null));
       } catch (error) {
         console.error('Failed to fetch stablecoins:', error);
+        toast.error('Failed to load stablecoins');
       } finally {
         setLoading(false);
       }
@@ -52,6 +68,49 @@ export const StablecoinList = () => {
 
     fetchStablecoins();
   }, [publicKey, connection]);
+
+  // Add mint/redeem handlers
+  const handleMint = async (bondMint: string) => {
+    if (!publicKey) return;
+    
+    try {
+      const program = new StablebondProgram(connection.rpcEndpoint, {
+        publicKey,
+        sendTransaction: async (transaction, connection) => {
+          const signature = await sendTransaction(transaction, connection);
+          return { signature };
+        }
+      });
+
+      const tx = await program.mintStablecoin(bondMint, 1); // Amount TBD
+      await tx.confirm('confirmed');
+      toast.success('Successfully minted tokens');
+    } catch (error) {
+      console.error('Mint failed:', error);
+      toast.error('Failed to mint tokens');
+    }
+  };
+
+  const handleRedeem = async (bondMint: string) => {
+    if (!publicKey) return;
+    
+    try {
+      const program = new StablebondProgram(connection.rpcEndpoint, {
+        publicKey,
+        sendTransaction: async (transaction, connection) => {
+          const signature = await sendTransaction(transaction, connection);
+          return { signature };
+        }
+      });
+
+      const tx = await program.redeemStablecoin(bondMint, 1); // Amount TBD
+      await tx.confirm('confirmed');
+      toast.success('Successfully redeemed tokens');
+    } catch (error) {
+      console.error('Redeem failed:', error);
+      toast.error('Failed to redeem tokens');
+    }
+  };
 
   if (loading) {
     return (
@@ -71,11 +130,8 @@ export const StablecoinList = () => {
 
   return (
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {stablecoins.map((coin, index) => (
-        <div
-          key={index}
-          className="bg-gray-800/50 rounded-xl border border-gray-700 p-6"
-        >
+      {stablecoins.map((coin) => (
+        <div key={coin.mint.toString()} className="bg-gray-800/50 rounded-xl border border-gray-700 p-6">
           <div className="flex items-center gap-4 mb-4">
             <img
               src={coin.icon}
@@ -100,10 +156,16 @@ export const StablecoinList = () => {
           </div>
           
           <div className="grid grid-cols-2 gap-2 mt-4">
-            <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
+            <button
+              onClick={() => handleMint(coin.mint.toString())}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
               Mint
             </button>
-            <button className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors">
+            <button
+              onClick={() => handleRedeem(coin.mint.toString())}
+              className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
               Redeem
             </button>
           </div>
