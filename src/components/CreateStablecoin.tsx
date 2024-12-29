@@ -33,31 +33,43 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey) return;
+    if (!publicKey || !sendTransaction) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
     
     setLoading(true);
     try {
       const program = new StablebondProgram(connection.rpcEndpoint, {
         publicKey,
-        sendTransaction
+        sendTransaction: async (transaction, connection) => {
+          try {
+            const signature = await sendTransaction(transaction, connection);
+            return { signature };
+          } catch (error) {
+            console.error('Transaction failed:', error);
+            throw error;
+          }
+        }
       });
 
-      // Check if user has access
-      const hasAccess = await program.hasAccess();
-      if (!hasAccess) {
-        throw new Error('You need to have Stablebonds to create stablecoins');
+      // Verify bond ownership
+      const bondBalance = await program.getBondBalance(formData.bondMint);
+      if (!bondBalance || bondBalance.isZero()) {
+        throw new Error('You need to own Stablebonds to create a stablecoin');
       }
 
-      // Create the stablecoin
+      // Create stablecoin with proper parameters
       const tx = await program.createStablecoin({
         name: formData.name,
-        symbol: formData.symbol,
+        symbol: formData.symbol.toUpperCase(),
         bondMint: formData.bondMint,
-        iconUrl: formData.icon || undefined
+        iconUrl: formData.icon || undefined,
+        decimals: 6, // Standard for Solana tokens
+        initialSupply: bondBalance // Use bond balance as initial supply
       });
 
-      // Wait for confirmation
-      await tx.confirm();
+      await tx.confirm('confirmed');
       
       toast.success('Stablecoin created successfully!');
       setFormData({ name: '', symbol: '', currency: 'USD', icon: '', bondMint: '' });
