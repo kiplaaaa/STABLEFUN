@@ -1,8 +1,10 @@
+#![cfg_attr(feature = "program", compiler_builtins::stack_size = "8192")]
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use switchboard_v2::AggregatorAccountData;
 
-declare_id!("2DBNsiRobyiP1xHW1fsg9DK1sCxfyRhfBp84Vr2sW2Xz");
+declare_id!("CUep92Exannf5ctuubvXsRhY6r2RwGPUPmXGm9cpEFAZ");
 
 #[program]
 pub mod stablecoin_factory {
@@ -205,25 +207,26 @@ pub struct RedeemTokens<'info> {
 
 #[account]
 pub struct StablecoinData {
+    pub authority: Pubkey,      // Move fixed-size fields to the top
+    pub bond_mint: Pubkey,
+    pub total_supply: u64,
+    pub decimals: u8,
+    // String fields last
     pub name: String,
     pub symbol: String,
-    pub decimals: u8,
     pub icon_url: String,
     pub target_currency: String,
-    pub bond_mint: Pubkey,
-    pub authority: Pubkey,
-    pub total_supply: u64,
 }
 
 impl StablecoinData {
-    pub const SIZE: usize = 32 + // name
-                           8 +  // symbol
-                           1 +  // decimals
-                           32 + // icon_url
-                           8 +  // target_currency
+    pub const SIZE: usize = 32 + // authority
                            32 + // bond_mint
-                           32 + // authority
-                           8;  // total_supply
+                           8 +  // total_supply
+                           1 +  // decimals
+                           32 + // name
+                           8 +  // symbol
+                           32 + // icon_url
+                           8;   // target_currency
 }
 
 #[error_code]
