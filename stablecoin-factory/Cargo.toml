@@ -1,6 +1,7 @@
 [workspace]
+resolver = "2"
 members = [
-    "programs/*"
+    "programs/stablecoin-factory"
 ]
 
 [profile.release]
