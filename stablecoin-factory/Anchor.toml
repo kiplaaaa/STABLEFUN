@@ -4,8 +4,8 @@
 seeds = false
 skip-lint = false
 
-[programs.localnet]
-stablecoin_factory = "your_program_id_here"
+[programs.devnet]
+stablecoin_factory = "2DBNsiRobyiP1xHW1fsg9DK1sCxfyRhfBp84Vr2sW2Xz"
 
 [registry]
 url = "https://api.apr.dev"
