@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use switchboard_v2::AggregatorAccountData;
 
-declare_id!("your_program_id_here");
+declare_id!("2DBNsiRobyiP1xHW1fsg9DK1sCxfyRhfBp84Vr2sW2Xz");
 
 #[program]
 pub mod stablecoin_factory {
