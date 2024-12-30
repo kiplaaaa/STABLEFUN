@@ -34,9 +34,10 @@ pub mod stablecoin_factory {
         amount: u64,
     ) -> Result<()> {
         // Get exchange rate from oracle
-        let feed = &ctx.accounts.oracle_feed;
-        let result = feed.get_result()?;
-        let exchange_rate = result.price;
+        let feed = &ctx.accounts.oracle_feed.load()?;
+        let result = feed.latest_confirmed_round.result;
+        // Calculate price from mantissa and scale
+        let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
 
         // Calculate token amount based on bond amount and exchange rate
         let token_amount = (amount as f64 * exchange_rate) as u64;
@@ -80,9 +81,10 @@ pub mod stablecoin_factory {
         amount: u64,
     ) -> Result<()> {
         // Get exchange rate from oracle
-        let feed = &ctx.accounts.oracle_feed;
-        let result = feed.get_result()?;
-        let exchange_rate = result.price;
+        let feed = &ctx.accounts.oracle_feed.load()?;
+        let result = feed.latest_confirmed_round.result;
+        // Calculate price from mantissa and scale
+        let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
 
         // Calculate bond amount based on token amount and exchange rate
         let bond_amount = (amount as f64 / exchange_rate) as u64;
@@ -123,6 +125,7 @@ pub mod stablecoin_factory {
 }
 
 #[derive(Accounts)]
+#[instruction(name: String, symbol: String, decimals: u8, icon_url: String, target_currency: String)]
 pub struct CreateStablecoin<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
