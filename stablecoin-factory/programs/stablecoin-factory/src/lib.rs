@@ -85,7 +85,8 @@ pub mod stablecoin_factory {
         // Get exchange rate from oracle
         let feed = &ctx.accounts.oracle_feed.load()?;
         let result = feed.latest_confirmed_round.result;
-        let exchange_rate = result.try_into_f64()?;
+        // Calculate price from mantissa and scale
+        let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
 
         // Calculate bond amount based on token amount and exchange rate
         let bond_amount = (amount as f64 / exchange_rate) as u64;
