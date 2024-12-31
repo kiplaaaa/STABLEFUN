@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use switchboard_solana::AggregatorAccountData;
 
-declare_id!("CMiRq31tjANA2ZPiRE8u4AUQhcKzNkmksYN2rvQtXqae");
+declare_id!("EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d");
 
 #[program]
 pub mod stablecoin_factory {

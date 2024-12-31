@@ -4,14 +4,14 @@
 resolution = true
 skip-lint = false
 
-[programs.devnet]
-stablecoin_factory = "CMiRq31tjANA2ZPiRE8u4AUQhcKzNkmksYN2rvQtXqae"
+[programs.localnet]
+stablecoin_factory = "EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
