@@ -2,9 +2,9 @@
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
-use switchboard_v2::AggregatorAccountData;
+use switchboard_solana::AggregatorAccountData;
 
-declare_id!("CUep92Exannf5ctuubvXsRhY6r2RwGPUPmXGm9cpEFAZ");
+declare_id!("CMiRq31tjANA2ZPiRE8u4AUQhcKzNkmksYN2rvQtXqae");
 
 #[program]
 pub mod stablecoin_factory {
@@ -85,8 +85,7 @@ pub mod stablecoin_factory {
         // Get exchange rate from oracle
         let feed = &ctx.accounts.oracle_feed.load()?;
         let result = feed.latest_confirmed_round.result;
-        // Calculate price from mantissa and scale
-        let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
+        let exchange_rate = result.try_into_f64()?;
 
         // Calculate bond amount based on token amount and exchange rate
         let bond_amount = (amount as f64 / exchange_rate) as u64;
