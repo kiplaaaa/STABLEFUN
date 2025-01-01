@@ -1,17 +1,22 @@
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
-import { Program, Provider, web3 } from '@project-serum/anchor';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { Program, AnchorProvider, Idl, BN, web3 } from '@project-serum/anchor';
 import { IDL } from './idl/stablecoin_factory';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
+// Update this to use your deployed program ID
+const PROGRAM_ID = "EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d";
+
 export class StablecoinProgram {
-  private program: Program;
+  private program: Program<Idl>;
   private connection: Connection;
+  private provider: AnchorProvider;
   
   constructor(connection: Connection, wallet: any) {
-    const provider = new Provider(connection, wallet, {
+    this.provider = new AnchorProvider(connection, wallet, {
       preflightCommitment: 'confirmed',
     });
-    this.program = new Program(IDL, new PublicKey("your_program_id"), provider);
+    // Use the correct program ID here
+    this.program = new Program(IDL as Idl, new PublicKey(PROGRAM_ID), this.provider);
     this.connection = connection;
   }
 
@@ -36,7 +41,7 @@ export class StablecoinProgram {
           params.targetCurrency
         )
         .accounts({
-          authority: this.program.provider.wallet.publicKey,
+          authority: this.provider.publicKey,
           stablecoinData: stablecoinData.publicKey,
           stablecoinMint: stablecoinMint.publicKey,
           bondMint: params.bondMint,
@@ -68,7 +73,7 @@ export class StablecoinProgram {
       const tx = await this.program.methods
         .mintTokens(new BN(params.amount))
         .accounts({
-          authority: this.program.provider.wallet.publicKey,
+          authority: this.provider.publicKey,
           stablecoinData: params.stablecoinData,
           stablecoinMint: params.stablecoinMint,
           userBondAccount: params.userBondAccount,
@@ -100,7 +105,7 @@ export class StablecoinProgram {
       const tx = await this.program.methods
         .redeemTokens(new BN(params.amount))
         .accounts({
-          authority: this.program.provider.wallet.publicKey,
+          authority: this.provider.publicKey,
           stablecoinData: params.stablecoinData,
           stablecoinMint: params.stablecoinMint,
           userBondAccount: params.userBondAccount,
@@ -116,6 +121,29 @@ export class StablecoinProgram {
     } catch (error) {
       console.error('Error redeeming tokens:', error);
       throw error;
+    }
+  }
+
+  async getBondBalance(bondMint: string | PublicKey): Promise<BN> {
+    try {
+      const mintKey = typeof bondMint === 'string' ? new PublicKey(bondMint) : bondMint;
+      const tokenAccounts = await this.connection.getTokenAccountsByOwner(
+        this.provider.publicKey,
+        { mint: mintKey }
+      );
+
+      if (tokenAccounts.value.length === 0) {
+        return new BN(0);
+      }
+
+      const balance = await this.connection.getTokenAccountBalance(
+        tokenAccounts.value[0].pubkey
+      );
+
+      return new BN(balance.value.amount);
+    } catch (error) {
+      console.error('Error getting bond balance:', error);
+      return new BN(0);
     }
   }
 } 
