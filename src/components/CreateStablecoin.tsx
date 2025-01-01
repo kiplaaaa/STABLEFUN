@@ -5,10 +5,11 @@ import { toast } from 'react-hot-toast';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
+import { StablecoinProgram } from '../utils/stablecoin-program';
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction, wallet } = useWallet();
+  const { publicKey, wallet } = useWallet();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -35,24 +36,25 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !wallet || !sendTransaction) {
+    if (!publicKey || !wallet || !wallet.adapter.sendTransaction) {
       toast.error('Please connect your wallet first');
       return;
     }
     
     setLoading(true);
     try {
-      const program = new StablebondProgram(connection, {
-        publicKey,
-        signTransaction: async (tx: Transaction) => {
-          return await sendTransaction(tx, connection);
-        },
-        signAllTransactions: async (txs: Transaction[]) => {
-          return Promise.all(txs.map(tx => sendTransaction(tx, connection)));
-        },
-      });
+      const stablecoinProgram = new StablecoinProgram(
+        connection,
+        {
+          publicKey,
+          sendTransaction: async (tx: Transaction) => {
+            const signature = await wallet.adapter.sendTransaction(tx, connection);
+            return signature;
+          }
+        }
+      );
 
-      await program.createStablecoin({
+      await stablecoinProgram.createStablecoin({
         name: formData.name,
         symbol: formData.symbol.toUpperCase(),
         decimals: 6,
