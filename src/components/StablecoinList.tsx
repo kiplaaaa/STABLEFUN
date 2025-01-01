@@ -4,6 +4,7 @@ import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { toast } from 'react-hot-toast';
 import { Transaction, Connection } from '@solana/web3.js';
+import { StablecoinProgram } from '../utils/stablecoin-program';
 
 type Stablecoin = {
   name: string;
@@ -24,7 +25,7 @@ type Bond = {
 
 export const StablecoinList = () => {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, wallet } = useWallet();
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,12 +34,19 @@ export const StablecoinList = () => {
       if (!publicKey) return;
       
       try {
-        const program = new StablebondProgram(connection.rpcEndpoint, {
-          publicKey,
-          sendTransaction: async (_transaction: Transaction, _connection: Connection) => {
-            throw new Error('Not implemented');
+        const stablecoinProgram = new StablecoinProgram(
+          connection,
+          {
+            publicKey,
+            sendTransaction: async (tx: Transaction) => {
+              if (!wallet?.adapter.sendTransaction) {
+                throw new Error("Wallet does not support transaction sending!");
+              }
+              const signature = await wallet.adapter.sendTransaction(tx, connection);
+              return signature;
+            }
           }
-        });
+        );
 
         // Get all bonds first
         const bonds = await StablebondProgram.getBonds(connection.rpcEndpoint);
@@ -47,7 +55,7 @@ export const StablecoinList = () => {
         const userStablecoins = await Promise.all(
           bonds.map(async (bond: Bond) => {
             try {
-              const balance = await program.getBondBalance(bond.mint);
+              const balance = await stablecoinProgram.getBondBalance(bond.mint);
               if (balance && !balance.isZero()) {
                 return {
                   name: bond.name,
