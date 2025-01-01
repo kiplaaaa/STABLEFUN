@@ -1,4 +1,6 @@
-export const IDL = {
+import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
+
+export const IDL: Idl = {
   version: "0.1.0",
   name: "stablecoin_factory",
   instructions: [
@@ -33,9 +35,7 @@ export const IDL = {
         { name: "oracleFeed", isMut: false, isSigner: false },
         { name: "tokenProgram", isMut: false, isSigner: false }
       ],
-      args: [
-        { name: "amount", type: "u64" }
-      ]
+      args: [{ name: "amount", type: "u64" }]
     },
     {
       name: "redeemTokens",
@@ -49,19 +49,17 @@ export const IDL = {
         { name: "oracleFeed", isMut: false, isSigner: false },
         { name: "tokenProgram", isMut: false, isSigner: false }
       ],
-      args: [
-        { name: "amount", type: "u64" }
-      ]
+      args: [{ name: "amount", type: "u64" }]
     }
   ],
   accounts: [
     {
-      name: "StablecoinData",
+      name: "stablecoinData",
       type: {
         kind: "struct",
         fields: [
-          { name: "authority", type: "pubkey" },
-          { name: "bondMint", type: "pubkey" },
+          { name: "authority", type: "publicKey" },
+          { name: "bondMint", type: "publicKey" },
           { name: "totalSupply", type: "u64" },
           { name: "decimals", type: "u8" },
           { name: "name", type: "string" },
@@ -80,3 +78,6 @@ export const IDL = {
     }
   ]
 };
+
+// Update the program class to use Program<Idl>
+export type StablecoinProgram = Program<Idl>;
