@@ -1,26 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { toast } from 'react-hot-toast';
-import { Transaction, Connection } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
+import { getOracleFeed, getExchangeRate } from '../utils/oracle-feeds';
+import { getStablecoinAccounts } from '../utils/account-utils';
 
-type Stablecoin = {
+interface Stablecoin {
+  mint: string;
   name: string;
   symbol: string;
   currency: string;
   icon: string;
   supply: number;
-  mint: string;
-};
+  bondMint: string;
+}
 
-type Bond = {
-  name: string;
-  symbol: string;
-  currency: string;
-  icon?: string;
-  mint: string;
+type TokenAction = {
+  stablecoin: Stablecoin;
+  type: 'mint' | 'redeem';
 };
 
 export const StablecoinList = () => {
@@ -28,53 +27,17 @@ export const StablecoinList = () => {
   const { publicKey, sendTransaction, wallet } = useWallet();
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [transacting, setTransacting] = useState<TokenAction | null>(null);
+  const [amount, setAmount] = useState('');
+  const [showActionModal, setShowActionModal] = useState(false);
 
   useEffect(() => {
     const fetchStablecoins = async () => {
-      if (!publicKey) return;
-      
+      if (!connection || !publicKey) return;
+      setLoading(true);
       try {
-        const stablecoinProgram = new StablecoinProgram(
-          connection,
-          {
-            publicKey,
-            sendTransaction: async (tx: Transaction) => {
-              if (!wallet?.adapter.sendTransaction) {
-                throw new Error("Wallet does not support transaction sending!");
-              }
-              const signature = await wallet.adapter.sendTransaction(tx, connection);
-              return signature;
-            }
-          }
-        );
-
-        // Get all bonds first
-        const bonds = await StablebondProgram.getBonds(connection.rpcEndpoint);
-        
-        // Get user's stablecoins and their balances
-        const userStablecoins = await Promise.all(
-          bonds.map(async (bond: Bond) => {
-            try {
-              const balance = await stablecoinProgram.getBondBalance(bond.mint);
-              if (balance && !balance.isZero()) {
-                return {
-                  name: bond.name,
-                  symbol: bond.symbol,
-                  currency: bond.currency,
-                  icon: bond.icon || '/default-coin.png',
-                  supply: balance.toNumber(),
-                  mint: bond.mint
-                };
-              }
-              return null;
-            } catch (error) {
-              console.error(`Error fetching balance for ${bond.symbol}:`, error);
-              return null;
-            }
-          })
-        );
-
-        setStablecoins(userStablecoins.filter((coin): coin is Stablecoin => coin !== null));
+        // Implement your fetch logic here
+        setStablecoins([]); // Replace with actual fetch
       } catch (error) {
         console.error('Failed to fetch stablecoins:', error);
         toast.error('Failed to load stablecoins');
@@ -84,57 +47,70 @@ export const StablecoinList = () => {
     };
 
     fetchStablecoins();
-  }, [publicKey, connection]);
+  }, [connection, publicKey]);
 
-  // Add mint/redeem handlers
-  const handleMint = async (bondMint: string) => {
-    if (!publicKey) return;
-    
-    try {
-      const program = new StablebondProgram(connection.rpcEndpoint, {
-        publicKey,
-        sendTransaction: async (transaction: Transaction, connection: Connection) => {
-          const signature = await sendTransaction(transaction, connection);
-          return { signature };
-        }
-      });
-
-      const tx = await program.mintStablecoin(bondMint, 1); // Amount TBD
-      await tx.confirm('confirmed');
-      toast.success('Successfully minted tokens');
-    } catch (error) {
-      console.error('Mint failed:', error);
-      toast.error('Failed to mint tokens');
-    }
+  const handleAction = async (stablecoin: Stablecoin, actionType: 'mint' | 'redeem') => {
+    setTransacting({ stablecoin, type: actionType });
+    setShowActionModal(true);
   };
 
-  const handleRedeem = async (bondMint: string) => {
-    if (!publicKey) return;
+  const handleConfirmAction = async () => {
+    if (!transacting || !publicKey || !wallet?.adapter.sendTransaction || !connection) return;
     
     try {
-      const program = new StablebondProgram(connection.rpcEndpoint, {
-        publicKey,
-        sendTransaction: async (transaction: Transaction, connection: Connection) => {
-          const signature = await sendTransaction(transaction, connection);
-          return { signature };
+      const { stablecoin, type } = transacting;
+      const stablecoinProgram = new StablecoinProgram(
+        connection,
+        {
+          publicKey,
+          sendTransaction: async (transaction: Transaction) => {
+            const signature = await wallet.adapter.sendTransaction(
+              transaction,
+              connection
+            );
+            return signature;
+          }
         }
-      });
+      );
 
-      const tx = await program.redeemStablecoin(bondMint, 1); // Amount TBD
-      await tx.confirm('confirmed');
-      toast.success('Successfully redeemed tokens');
+      const oracleFeed = getOracleFeed(stablecoin.currency);
+      const exchangeRate = await getExchangeRate(connection, oracleFeed);
+      const amountLamports = Math.floor(parseFloat(amount) * Math.pow(10, 6));
+
+      const stablecoinMint = new PublicKey(stablecoin.mint);
+      const accounts = await getStablecoinAccounts(
+        connection,
+        publicKey,
+        stablecoinMint,
+        new PublicKey(stablecoin.bondMint),
+        oracleFeed,
+        (tx, conn) => wallet.adapter.sendTransaction(tx, conn)
+      );
+
+      if (type === 'mint') {
+        await stablecoinProgram.mintTokens({
+          amount: amountLamports,
+          ...accounts
+        });
+      } else {
+        await stablecoinProgram.redeemTokens({
+          amount: amountLamports,
+          ...accounts
+        });
+      }
+
+      toast.success(`Successfully ${type}ed tokens`);
+      setShowActionModal(false);
+      setAmount('');
+      setTransacting(null);
     } catch (error) {
-      console.error('Redeem failed:', error);
-      toast.error('Failed to redeem tokens');
+      console.error(`${transacting.type} failed:`, error);
+      toast.error(`Failed to ${transacting.type} tokens`);
     }
   };
 
   if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-      </div>
-    );
+    return <div>Loading...</div>;
   }
 
   if (stablecoins.length === 0) {
@@ -146,48 +122,93 @@ export const StablecoinList = () => {
   }
 
   return (
-    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {stablecoins.map((coin) => (
-        <div key={coin.mint.toString()} className="bg-gray-800/50 rounded-xl border border-gray-700 p-6">
-          <div className="flex items-center gap-4 mb-4">
-            <img
-              src={coin.icon}
-              alt={coin.name}
-              className="w-12 h-12 rounded-full"
+    <>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {stablecoins.map((coin) => (
+          <div key={coin.mint} className="bg-gray-800/50 rounded-xl border border-gray-700 p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <img
+                src={coin.icon}
+                alt={coin.name}
+                className="w-12 h-12 rounded-full"
+              />
+              <div>
+                <h3 className="font-semibold">{coin.name}</h3>
+                <p className="text-sm text-gray-400">{coin.symbol}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Currency</span>
+                <span>{coin.currency}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Supply</span>
+                <span>{coin.supply.toLocaleString()}</span>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button
+                onClick={() => handleAction(coin, 'mint')}
+                disabled={!publicKey || !!transacting}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {transacting?.stablecoin.mint === coin.mint && transacting.type === 'mint' 
+                  ? 'Minting...' 
+                  : 'Mint'}
+              </button>
+              <button
+                onClick={() => handleAction(coin, 'redeem')}
+                disabled={!publicKey || !!transacting}
+                className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {transacting?.stablecoin.mint === coin.mint && transacting.type === 'redeem'
+                  ? 'Redeeming...'
+                  : 'Redeem'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Action Modal */}
+      {showActionModal && transacting && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+          <div className="bg-gray-800 p-6 rounded-xl max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">
+              {transacting.type === 'mint' ? 'Mint' : 'Redeem'} {transacting.stablecoin.symbol}
+            </h3>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Enter amount"
+              className="w-full bg-gray-700 rounded-lg border border-gray-600 p-2 text-white mb-4"
             />
-            <div>
-              <h3 className="font-semibold">{coin.name}</h3>
-              <p className="text-sm text-gray-400">{coin.symbol}</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleConfirmAction}
+                disabled={!amount || parseFloat(amount) <= 0}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => {
+                  setShowActionModal(false);
+                  setTransacting(null);
+                  setAmount('');
+                }}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
             </div>
-          </div>
-          
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Currency</span>
-              <span>{coin.currency}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Supply</span>
-              <span>{coin.supply.toLocaleString()}</span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <button
-              onClick={() => handleMint(coin.mint.toString())}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-            >
-              Mint
-            </button>
-            <button
-              onClick={() => handleRedeem(coin.mint.toString())}
-              className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-            >
-              Redeem
-            </button>
           </div>
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 };
