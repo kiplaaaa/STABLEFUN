@@ -1,7 +1,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl, BN, web3 } from '@project-serum/anchor';
-import { IDL } from './idl/stablecoin_factory';
+import { Program, AnchorProvider, web3, BN, Idl } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { IDL } from './idl/stablecoin_factory';
 
 // Update this to use your deployed program ID
 const PROGRAM_ID = "EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d";
@@ -15,8 +15,13 @@ export class StablecoinProgram {
     this.provider = new AnchorProvider(connection, wallet, {
       preflightCommitment: 'confirmed',
     });
-    // Use the correct program ID here
-    this.program = new Program(IDL as Idl, new PublicKey(PROGRAM_ID), this.provider);
+    
+    this.program = new Program(
+      IDL,
+      new PublicKey(PROGRAM_ID),
+      this.provider
+    );
+    
     this.connection = connection;
   }
 
@@ -69,6 +74,10 @@ export class StablecoinProgram {
     userTokenAccount: PublicKey;
     oracleFeed: PublicKey;
   }) {
+    // Verify the caller is the authority
+    if (!this.provider.publicKey.equals(params.stablecoinData)) {
+      throw new Error('Only the authority can mint tokens');
+    }
     try {
       const tx = await this.program.methods
         .mintTokens(new BN(params.amount))
