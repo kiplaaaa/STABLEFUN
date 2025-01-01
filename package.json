@@ -11,11 +11,13 @@
   },
   "dependencies": {
     "@etherfuse/stablebond-sdk": "^2.0.21",
+    "@project-serum/anchor": "^0.26.0",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",
     "@solana/wallet-adapter-wallets": "^0.19.32",
     "@solana/web3.js": "^1.91.1",
+    "@solana/spl-token": "^0.3.11",
     "buffer": "^6.0.3",
     "http-browserify": "^1.7.0",
     "lucide-react": "^0.344.0",
