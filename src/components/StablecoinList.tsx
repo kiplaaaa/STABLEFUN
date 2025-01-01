@@ -3,6 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { toast } from 'react-hot-toast';
+import { Transaction, Connection } from '@solana/web3.js';
 
 type Stablecoin = {
   name: string;
@@ -10,6 +11,14 @@ type Stablecoin = {
   currency: string;
   icon: string;
   supply: number;
+  mint: string;
+};
+
+type Bond = {
+  name: string;
+  symbol: string;
+  currency: string;
+  icon?: string;
   mint: string;
 };
 
@@ -26,7 +35,7 @@ export const StablecoinList = () => {
       try {
         const program = new StablebondProgram(connection.rpcEndpoint, {
           publicKey,
-          sendTransaction: async (transaction, connection) => {
+          sendTransaction: async (_transaction: Transaction, _connection: Connection) => {
             throw new Error('Not implemented');
           }
         });
@@ -36,7 +45,7 @@ export const StablecoinList = () => {
         
         // Get user's stablecoins and their balances
         const userStablecoins = await Promise.all(
-          bonds.map(async (bond) => {
+          bonds.map(async (bond: Bond) => {
             try {
               const balance = await program.getBondBalance(bond.mint);
               if (balance && !balance.isZero()) {
@@ -76,7 +85,7 @@ export const StablecoinList = () => {
     try {
       const program = new StablebondProgram(connection.rpcEndpoint, {
         publicKey,
-        sendTransaction: async (transaction, connection) => {
+        sendTransaction: async (transaction: Transaction, connection: Connection) => {
           const signature = await sendTransaction(transaction, connection);
           return { signature };
         }
@@ -97,7 +106,7 @@ export const StablecoinList = () => {
     try {
       const program = new StablebondProgram(connection.rpcEndpoint, {
         publicKey,
-        sendTransaction: async (transaction, connection) => {
+        sendTransaction: async (transaction: Transaction, connection: Connection) => {
           const signature = await sendTransaction(transaction, connection);
           return { signature };
         }

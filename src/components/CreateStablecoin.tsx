@@ -4,8 +4,7 @@ import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { StablecoinProgram } from '@etherfuse/stablecoin-program';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
@@ -36,20 +35,24 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !sendTransaction) {
+    if (!publicKey || !wallet || !sendTransaction) {
       toast.error('Please connect your wallet first');
       return;
     }
     
     setLoading(true);
     try {
-      const program = new StablecoinProgram(connection, {
+      const program = new StablebondProgram(connection, {
         publicKey,
-        signTransaction: wallet.signTransaction,
-        signAllTransactions: wallet.signAllTransactions,
+        signTransaction: async (tx: Transaction) => {
+          return await sendTransaction(tx, connection);
+        },
+        signAllTransactions: async (txs: Transaction[]) => {
+          return Promise.all(txs.map(tx => sendTransaction(tx, connection)));
+        },
       });
 
-      const result = await program.createStablecoin({
+      await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol.toUpperCase(),
         decimals: 6,
@@ -139,7 +142,7 @@ export const CreateStablecoin = () => {
             required
           >
             <option value="">Select a bond</option>
-            {availableBonds.map((bond, index) => (
+            {availableBonds.map((bond) => (
               <option key={bond.mint.toString()} value={bond.mint.toString()}>
                 {bond.name} ({bond.symbol})
               </option>
