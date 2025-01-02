@@ -2,15 +2,30 @@ import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { StablebondProgram } from '@etherfuse/stablebond-sdk';
+import { StablebondProgram, Stablebond } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
+
+interface StablebondType {
+  mint: {
+    toString: () => string;
+  };
+  name: string;
+  symbol: string;
+}
+
+interface Bond {
+  mint: string;
+  name: string;
+  symbol: string;
+}
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const [loading, setLoading] = useState(false);
+  const [availableBonds, setAvailableBonds] = useState<Bond[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     symbol: '',
@@ -18,14 +33,43 @@ export const CreateStablecoin = () => {
     icon: '',
     bondMint: ''
   });
-  const [availableBonds, setAvailableBonds] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchBonds = async () => {
       if (!connection) return;
+      
       try {
         const bonds = await StablebondProgram.getBonds(connection.rpcEndpoint);
-        setAvailableBonds(bonds);
+        
+        const formattedBonds = bonds.map((bond: any) => {
+          console.log('Raw bond data:', bond);
+          
+          // Extract the mint address from the correct nested structure
+          const mintString = bond.mint?.address;
+          
+          if (!mintString) {
+            console.error('Missing mint address for bond:', bond);
+            return null;
+          }
+          
+          try {
+            // Verify it's a valid Solana address
+            new PublicKey(mintString);
+            
+            return {
+              mint: mintString,
+              name: bond.mint?.name || 'Unnamed Bond',
+              symbol: bond.mint?.symbol || 'USTRY' // Using the symbol from your console output
+            };
+          } catch (e) {
+            console.error('Invalid mint address:', mintString, e);
+            return null;
+          }
+        })
+        .filter(Boolean); // Remove any null entries
+        
+        console.log('Formatted bonds:', formattedBonds);
+        setAvailableBonds(formattedBonds);
       } catch (error) {
         console.error('Failed to fetch bonds:', error);
         toast.error('Failed to fetch available bonds');
@@ -35,6 +79,14 @@ export const CreateStablecoin = () => {
     fetchBonds();
   }, [connection]);
 
+  // Handle bond selection
+  const handleBondSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      bondMint: e.target.value
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!publicKey || !sendTransaction || !connection) {
@@ -42,17 +94,28 @@ export const CreateStablecoin = () => {
       return;
     }
 
+    if (!formData.bondMint) {
+      toast.error('Please select a bond');
+      return;
+    }
+
     try {
       setLoading(true);
 
+      console.log('Selected bond mint:', formData.bondMint);
+
+      // Validate bondMint is a valid PublicKey
       let bondMintPubkey: PublicKey;
       try {
         bondMintPubkey = new PublicKey(formData.bondMint);
+        console.log('Valid bond mint pubkey:', bondMintPubkey.toString());
       } catch (error) {
-        toast.error('Invalid bond mint address');
+        console.error('Invalid bond mint address:', formData.bondMint, error);
+        toast.error('Invalid bond mint address. Please select a valid bond.');
         return;
       }
 
+      // Create wrapper function to match expected signature
       const wrappedSendTransaction = async (transaction: Transaction): Promise<string> => {
         return sendTransaction(transaction, connection);
       };
@@ -150,17 +213,24 @@ export const CreateStablecoin = () => {
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-1">Bond</label>
+          <label htmlFor="bond" className="block text-sm font-medium text-gray-200">
+            Bond
+          </label>
           <select
+            id="bond"
             value={formData.bondMint}
-            onChange={(e) => setFormData({ ...formData, bondMint: e.target.value })}
-            className="w-full bg-gray-700 rounded-lg border border-gray-600 p-2 text-white"
+            onChange={(e) => {
+              const selectedValue = e.target.value;
+              console.log('Selected bond value:', selectedValue);
+              setFormData(prev => ({ ...prev, bondMint: selectedValue }));
+            }}
+            className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             required
           >
             <option value="">Select a bond</option>
             {availableBonds.map((bond) => (
-              <option key={bond.mint.toString()} value={bond.mint.toString()}>
-                {bond.name} ({bond.symbol})
+              <option key={bond.mint} value={bond.mint}>
+                {bond.symbol} - {bond.name}
               </option>
             ))}
           </select>
