@@ -102,9 +102,15 @@ export const CreateStablecoin = () => {
       const stablecoinData = web3.Keypair.generate();
       const stablecoinMint = web3.Keypair.generate();
 
+      console.log('Generated keypairs:', {
+        stablecoinData: stablecoinData.publicKey.toBase58(),
+        stablecoinMint: stablecoinMint.publicKey.toBase58(),
+      });
+
       let bondMintPubkey: PublicKey;
       try {
         bondMintPubkey = new PublicKey(formData.bondMint);
+        console.log('Bond mint pubkey:', bondMintPubkey.toBase58());
       } catch (error) {
         console.error('Invalid bond mint address:', formData.bondMint, error);
         toast.error('Invalid bond mint address. Please select a valid bond.');
@@ -116,10 +122,21 @@ export const CreateStablecoin = () => {
         connection,
         {
           publicKey,
-          sendTransaction
+          sendTransaction: async (transaction: Transaction, connection: Connection, options?: any) => {
+            try {
+              console.log('Sending transaction with options:', options);
+              const sig = await sendTransaction(transaction, connection, options);
+              console.log('Transaction sent successfully:', sig);
+              return sig;
+            } catch (err) {
+              console.error('Error in sendTransaction:', err);
+              throw err;
+            }
+          }
         }
       );
 
+      console.log('Calling createStablecoin...');
       const result = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
@@ -144,8 +161,9 @@ export const CreateStablecoin = () => {
         bondMint: ''
       });
     } catch (error) {
-      console.error('Error creating stablecoin:', error);
-      toast.error('Failed to create stablecoin: ' + (error as Error).message);
+      console.error('Detailed error in handleSubmit:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      toast.error(`Failed to create stablecoin: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
