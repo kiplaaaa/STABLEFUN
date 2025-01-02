@@ -4,12 +4,12 @@ import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, Transaction } from '@solana/web3.js';
+import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
-  const { publicKey, wallet } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -28,6 +28,7 @@ export const CreateStablecoin = () => {
         setAvailableBonds(bonds);
       } catch (error) {
         console.error('Failed to fetch bonds:', error);
+        toast.error('Failed to fetch available bonds');
       }
     };
     
@@ -36,38 +37,51 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !wallet || !wallet.adapter.sendTransaction) {
+    if (!publicKey || !sendTransaction || !connection) {
       toast.error('Please connect your wallet first');
       return;
     }
-    
-    setLoading(true);
-    try {
-      const stablecoinProgram = new StablecoinProgram(
-        connection,
-        {
-          publicKey,
-          sendTransaction: async (tx: Transaction) => {
-            const signature = await wallet.adapter.sendTransaction(tx, connection);
-            return signature;
-          }
-        }
-      );
 
-      await stablecoinProgram.createStablecoin({
+    try {
+      setLoading(true);
+
+      let bondMintPubkey: PublicKey;
+      try {
+        bondMintPubkey = new PublicKey(formData.bondMint);
+      } catch (error) {
+        toast.error('Invalid bond mint address');
+        return;
+      }
+
+      const wrappedSendTransaction = async (transaction: Transaction): Promise<string> => {
+        return sendTransaction(transaction, connection);
+      };
+
+      const program = new StablecoinProgram(connection, {
+        publicKey,
+        sendTransaction: wrappedSendTransaction
+      });
+
+      await program.createStablecoin({
         name: formData.name,
-        symbol: formData.symbol.toUpperCase(),
-        decimals: 6,
+        symbol: formData.symbol,
+        decimals: 9,
         iconUrl: formData.icon,
         targetCurrency: formData.currency,
-        bondMint: new PublicKey(formData.bondMint),
+        bondMint: bondMintPubkey
       });
 
       toast.success('Stablecoin created successfully!');
-      setFormData({ name: '', symbol: '', currency: 'USD', icon: '', bondMint: '' });
+      setFormData({
+        name: '',
+        symbol: '',
+        currency: 'USD',
+        icon: '',
+        bondMint: ''
+      });
     } catch (error) {
-      console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Failed to create stablecoin');
+      console.error('Error creating stablecoin:', error);
+      toast.error('Failed to create stablecoin: ' + (error as Error).message);
     } finally {
       setLoading(false);
     }
