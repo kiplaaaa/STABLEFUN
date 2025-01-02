@@ -4,9 +4,10 @@ import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram, Stablebond } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, VersionedTransaction, Keypair } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import * as web3 from '@solana/web3.js';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 
 interface StablebondType {
   mint: {
@@ -90,44 +91,60 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !sendTransaction || !connection) {
-      toast.error('Please connect your wallet first');
+    
+    if (!publicKey || !connection) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    // Validate bond selection
+    if (!formData.bondMint) {
+      toast.error('Please select a bond');
       return;
     }
 
     try {
       setLoading(true);
 
-      // Create keypairs for the new accounts
-      const stablecoinData = web3.Keypair.generate();
-      const stablecoinMint = web3.Keypair.generate();
+      // Get the bond mint public key
+      const bondMintPubkey = new PublicKey(formData.bondMint);
 
-      console.log('Generated keypairs:', {
-        stablecoinData: stablecoinData.publicKey.toBase58(),
-        stablecoinMint: stablecoinMint.publicKey.toBase58(),
-      });
+      // Get the user's associated token account for this bond
+      const userBondAccount = await getAssociatedTokenAddress(
+        bondMintPubkey,      // mint
+        publicKey,           // owner
+        false               // allowOwnerOffCurve
+      );
 
-      let bondMintPubkey: PublicKey;
-      try {
-        bondMintPubkey = new PublicKey(formData.bondMint);
-        console.log('Bond mint pubkey:', bondMintPubkey.toBase58());
-      } catch (error) {
-        console.error('Invalid bond mint address:', formData.bondMint, error);
-        toast.error('Invalid bond mint address. Please select a valid bond.');
+      // Check if the token account exists
+      const tokenAccount = await connection.getAccountInfo(userBondAccount);
+      if (!tokenAccount) {
+        toast.error('You don\'t have a token account for this bond. Please acquire some bonds first.');
         return;
       }
 
-      // Create program instance with wallet adapter
+      // Now check the balance of the associated token account
+      const bondBalance = await connection.getTokenAccountBalance(userBondAccount);
+      
+      if (!bondBalance || bondBalance.value.uiAmount === 0) {
+        toast.error('No bond balance found. Please acquire some bonds first.');
+        return;
+      }
+
+      console.log('Bond balance:', bondBalance.value.uiAmount);
+
+      // Generate new keypairs for the stablecoin accounts
+      const stablecoinData = Keypair.generate();
+      const stablecoinMint = Keypair.generate();
+
+      // Create the stablecoin program instance
       const program = new StablecoinProgram(
         connection,
         {
           publicKey,
-          sendTransaction: async (transaction: Transaction, connection: Connection, options?: any) => {
+          sendTransaction: async (transaction: Transaction) => {
             try {
-              console.log('Sending transaction with options:', options);
-              const sig = await sendTransaction(transaction, connection, options);
-              console.log('Transaction sent successfully:', sig);
-              return sig;
+              return await sendTransaction(transaction, connection);
             } catch (err) {
               console.error('Error in sendTransaction:', err);
               throw err;
@@ -136,7 +153,7 @@ export const CreateStablecoin = () => {
         }
       );
 
-      console.log('Calling createStablecoin...');
+      // Create the stablecoin
       const result = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
@@ -144,9 +161,8 @@ export const CreateStablecoin = () => {
         iconUrl: formData.icon,
         targetCurrency: formData.currency,
         bondMint: bondMintPubkey,
-        stablecoinData: stablecoinData.publicKey,
-        stablecoinMint: stablecoinMint.publicKey,
-        signers: [stablecoinData, stablecoinMint]
+        stablecoinData,
+        stablecoinMint,
       });
 
       console.log('Stablecoin created successfully:', result);
