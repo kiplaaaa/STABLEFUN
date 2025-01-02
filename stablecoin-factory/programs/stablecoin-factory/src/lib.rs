@@ -18,6 +18,7 @@ pub mod stablecoin_factory {
         icon_url: String,
         target_currency: String,
     ) -> Result<()> {
+        // Initialize the stablecoin data account
         let stablecoin = &mut ctx.accounts.stablecoin_data;
         stablecoin.name = name;
         stablecoin.symbol = symbol;
@@ -135,7 +136,7 @@ pub struct CreateStablecoin<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + StablecoinData::SIZE,
+        space = StablecoinData::SIZE,
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
     
@@ -219,14 +220,15 @@ pub struct StablecoinData {
 }
 
 impl StablecoinData {
-    pub const SIZE: usize = 32 + // authority
+    pub const SIZE: usize = 8 +  // discriminator
+                           32 + // authority
                            32 + // bond_mint
                            8 +  // total_supply
                            1 +  // decimals
-                           32 + // name
-                           8 +  // symbol
-                           32 + // icon_url
-                           8;   // target_currency
+                           4 + 32 + // name (4 bytes for length + max 32 bytes for string)
+                           4 + 8 +  // symbol (4 bytes for length + max 8 bytes for string)
+                           4 + 32 + // icon_url (4 bytes for length + max 32 bytes for string)
+                           4 + 8;   // target_currency (4 bytes for length + max 8 bytes for string)
 }
 
 #[error_code]

@@ -4,8 +4,9 @@ import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram, Stablebond } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
+import * as web3 from '@solana/web3.js';
 
 interface StablebondType {
   mint: {
@@ -94,47 +95,47 @@ export const CreateStablecoin = () => {
       return;
     }
 
-    if (!formData.bondMint) {
-      toast.error('Please select a bond');
-      return;
-    }
-
     try {
       setLoading(true);
 
-      console.log('Selected bond mint:', formData.bondMint);
+      // Create keypairs for the new accounts
+      const stablecoinData = web3.Keypair.generate();
+      const stablecoinMint = web3.Keypair.generate();
 
-      // Validate bondMint is a valid PublicKey
       let bondMintPubkey: PublicKey;
       try {
         bondMintPubkey = new PublicKey(formData.bondMint);
-        console.log('Valid bond mint pubkey:', bondMintPubkey.toString());
       } catch (error) {
         console.error('Invalid bond mint address:', formData.bondMint, error);
         toast.error('Invalid bond mint address. Please select a valid bond.');
         return;
       }
 
-      // Create wrapper function to match expected signature
-      const wrappedSendTransaction = async (transaction: Transaction): Promise<string> => {
-        return sendTransaction(transaction, connection);
-      };
+      // Create program instance with wallet adapter
+      const program = new StablecoinProgram(
+        connection,
+        {
+          publicKey,
+          sendTransaction
+        }
+      );
 
-      const program = new StablecoinProgram(connection, {
-        publicKey,
-        sendTransaction: wrappedSendTransaction
-      });
-
-      await program.createStablecoin({
+      const result = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
         decimals: 9,
         iconUrl: formData.icon,
         targetCurrency: formData.currency,
-        bondMint: bondMintPubkey
+        bondMint: bondMintPubkey,
+        stablecoinData: stablecoinData.publicKey,
+        stablecoinMint: stablecoinMint.publicKey,
+        signers: [stablecoinData, stablecoinMint]
       });
 
+      console.log('Stablecoin created successfully:', result);
       toast.success('Stablecoin created successfully!');
+      
+      // Reset form
       setFormData({
         name: '',
         symbol: '',

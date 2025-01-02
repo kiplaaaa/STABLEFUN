@@ -16,33 +16,34 @@ type NodeWallet = {
 export class StablecoinProgram {
   private program: Program;
   private connection: Connection;
-  private provider: AnchorProvider;
+  private wallet: {
+    publicKey: PublicKey;
+    sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
+  };
+  public programId: PublicKey = PROGRAM_ID;
   
   constructor(
     connection: Connection,
-    wallet: { publicKey: PublicKey; sendTransaction: (transaction: Transaction) => Promise<string> }
+    wallet: {
+      publicKey: PublicKey;
+      sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
+    }
   ) {
     this.connection = connection;
+    this.wallet = wallet;
 
-    // Create a wallet adapter that implements the NodeWallet interface
-    const walletAdapter: NodeWallet = {
-      publicKey: wallet.publicKey,
-      signTransaction: async (tx: Transaction) => tx, // Phantom handles signing
-      signAllTransactions: async (txs: Transaction[]) => txs, // Phantom handles signing
-      payer: Keypair.generate(), // Create a dummy keypair since we don't use it
-    };
-    
-    this.provider = new AnchorProvider(
+    // Create AnchorProvider with dummy signTransaction methods
+    const provider = new AnchorProvider(
       connection,
-      walletAdapter as unknown as Wallet,
+      {
+        publicKey: wallet.publicKey,
+        signTransaction: async (tx: Transaction) => tx,
+        signAllTransactions: async (txs: Transaction[]) => txs,
+      },
       { preflightCommitment: 'confirmed' }
     );
-    
-    this.program = new Program(
-      IDL,
-      PROGRAM_ID,
-      this.provider
-    );
+
+    this.program = new Program(IDL, PROGRAM_ID, provider);
   }
 
   async createStablecoin(params: {
@@ -52,11 +53,12 @@ export class StablecoinProgram {
     iconUrl: string;
     targetCurrency: string;
     bondMint: PublicKey;
+    stablecoinData: PublicKey;
+    stablecoinMint: PublicKey;
+    signers: Keypair[];
   }) {
-    const stablecoinData = web3.Keypair.generate();
-    const stablecoinMint = web3.Keypair.generate();
-
     try {
+      // Create the transaction
       const tx = await this.program.methods
         .createStablecoin(
           params.name,
@@ -66,26 +68,43 @@ export class StablecoinProgram {
           params.targetCurrency
         )
         .accounts({
-          authority: this.provider.publicKey,
-          stablecoinData: stablecoinData.publicKey,
-          stablecoinMint: stablecoinMint.publicKey,
+          authority: this.wallet.publicKey,
+          stablecoinData: params.stablecoinData,
+          stablecoinMint: params.stablecoinMint,
           bondMint: params.bondMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: web3.SystemProgram.programId,
           rent: web3.SYSVAR_RENT_PUBKEY,
         })
-        .signers([stablecoinData, stablecoinMint])
-        .rpc();
+        .transaction();
 
-      await this.connection.confirmTransaction(tx);
-      
+      // Get latest blockhash
+      const latestBlockhash = await this.connection.getLatestBlockhash();
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.feePayer = this.wallet.publicKey;
+
+      // Sign with all signers
+      params.signers.forEach(signer => {
+        tx.sign(signer);
+      });
+
+      // Send the transaction using the wallet's sendTransaction
+      const signature = await this.wallet.sendTransaction(tx, this.connection);
+
+      // Wait for confirmation
+      await this.connection.confirmTransaction({
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+      });
+
       return {
-        stablecoinData: stablecoinData.publicKey,
-        stablecoinMint: stablecoinMint.publicKey,
-        signature: tx
+        signature,
+        stablecoinData: params.stablecoinData,
+        stablecoinMint: params.stablecoinMint,
       };
     } catch (error) {
-      console.error('Error creating stablecoin:', error);
+      console.error('Error in createStablecoin:', error);
       throw error;
     }
   }
