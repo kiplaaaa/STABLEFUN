@@ -8,6 +8,7 @@ import { Connection, PublicKey, Transaction, VersionedTransaction, Keypair } fro
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import * as web3 from '@solana/web3.js';
 import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { GetTestBonds } from './GetTestBonds';
 
 interface StablebondType {
   mint: {
@@ -35,6 +36,7 @@ export const CreateStablecoin = () => {
     icon: '',
     bondMint: ''
   });
+  const [bondBalance, setBondBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchBonds = async () => {
@@ -89,6 +91,38 @@ export const CreateStablecoin = () => {
     }));
   };
 
+  const checkBondBalance = async (bondMintStr: string) => {
+    if (!publicKey || !connection) return;
+    
+    try {
+      const bondMintPubkey = new PublicKey(bondMintStr);
+      const userBondAccount = await getAssociatedTokenAddress(
+        bondMintPubkey,
+        publicKey,
+        false
+      );
+
+      // Check if account exists
+      const account = await connection.getAccountInfo(userBondAccount);
+      if (!account) {
+        setBondBalance(null);
+        return;
+      }
+
+      const balance = await connection.getTokenAccountBalance(userBondAccount);
+      setBondBalance(balance.value.uiAmount);
+    } catch (error) {
+      console.error('Error checking bond balance:', error);
+      setBondBalance(null);
+    }
+  };
+
+  useEffect(() => {
+    if (formData.bondMint) {
+      checkBondBalance(formData.bondMint);
+    }
+  }, [formData.bondMint, publicKey, connection]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -97,9 +131,13 @@ export const CreateStablecoin = () => {
       return;
     }
 
-    // Validate bond selection
     if (!formData.bondMint) {
       toast.error('Please select a bond');
+      return;
+    }
+
+    if (bondBalance === null || bondBalance === 0) {
+      toast.error('You need to acquire some bonds first');
       return;
     }
 
@@ -254,11 +292,7 @@ export const CreateStablecoin = () => {
           <select
             id="bond"
             value={formData.bondMint}
-            onChange={(e) => {
-              const selectedValue = e.target.value;
-              console.log('Selected bond value:', selectedValue);
-              setFormData(prev => ({ ...prev, bondMint: selectedValue }));
-            }}
+            onChange={handleBondSelect}
             className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             required
           >
@@ -269,6 +303,22 @@ export const CreateStablecoin = () => {
               </option>
             ))}
           </select>
+          
+          {formData.bondMint && (
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-400">
+                  Your Balance: {bondBalance === null ? 'No tokens' : `${bondBalance} tokens`}
+                </span>
+                <GetTestBonds bondMint={formData.bondMint} />
+              </div>
+              {bondBalance === null && (
+                <p className="text-sm text-red-400">
+                  You need to acquire some test bonds before creating a stablecoin
+                </p>
+              )}
+            </div>
+          )}
         </div>
         
         <button
