@@ -58,6 +58,13 @@ export class StablecoinProgram {
     signers: Keypair[];
   }) {
     try {
+      console.log('Creating stablecoin with params:', {
+        ...params,
+        bondMint: params.bondMint.toBase58(),
+        stablecoinData: params.stablecoinData.toBase58(),
+        stablecoinMint: params.stablecoinMint.toBase58(),
+      });
+
       // Create the transaction
       const tx = await this.program.methods
         .createStablecoin(
@@ -78,25 +85,48 @@ export class StablecoinProgram {
         })
         .transaction();
 
+      console.log('Transaction created');
+
       // Get latest blockhash
       const latestBlockhash = await this.connection.getLatestBlockhash();
       tx.recentBlockhash = latestBlockhash.blockhash;
       tx.feePayer = this.wallet.publicKey;
 
+      console.log('Added blockhash and feePayer');
+
       // Sign with all signers
       params.signers.forEach(signer => {
+        console.log('Signing with:', signer.publicKey.toBase58());
         tx.sign(signer);
       });
 
+      console.log('Transaction signed by all signers');
+
+      // Add transaction options
+      const txWithOptions = Object.assign(tx, {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 5
+      });
+
       // Send the transaction using the wallet's sendTransaction
+      console.log('Sending transaction...');
       const signature = await this.wallet.sendTransaction(tx, this.connection);
 
+      console.log('Transaction sent, signature:', signature);
+
       // Wait for confirmation
-      await this.connection.confirmTransaction({
+      const confirmation = await this.connection.confirmTransaction({
         signature,
         blockhash: latestBlockhash.blockhash,
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
       });
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log('Transaction confirmed');
 
       return {
         signature,
@@ -104,7 +134,10 @@ export class StablecoinProgram {
         stablecoinMint: params.stablecoinMint,
       };
     } catch (error) {
-      console.error('Error in createStablecoin:', error);
+      console.error('Detailed error in createStablecoin:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to create stablecoin: ${error.message}`);
+      }
       throw error;
     }
   }
