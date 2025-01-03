@@ -7,7 +7,12 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { Connection, PublicKey, Transaction, VersionedTransaction, Keypair } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import * as web3 from '@solana/web3.js';
-import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
+import { Program } from '@project-serum/anchor';
+import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { IDL } from '../utils/idl/stablecoin_factory';
+import { AnchorProvider } from '@project-serum/anchor';
 
 interface StablebondType {
   mint: {
@@ -141,96 +146,59 @@ export const CreateStablecoin = () => {
       return;
     }
 
-    if (!formData.bondMint) {
-      toast.error('Please select a bond');
-      return;
-    }
-
-    // Force a fresh balance check before submission
-    await checkBondBalance(formData.bondMint);
-    
-    if (!bondBalance || bondBalance <= 0) {
-      toast.error('You need to have some bonds to create a stablecoin');
-      return;
-    }
-
     try {
       setLoading(true);
-
-      // Get the bond mint public key
       const bondMintPubkey = new PublicKey(formData.bondMint);
-
-      // Get the user's associated token account for this bond
-      const userBondAccount = await getAssociatedTokenAddress(
-        bondMintPubkey,      // mint
-        publicKey,           // owner
-        false               // allowOwnerOffCurve
-      );
-
-      // Check if the token account exists
-      const tokenAccount = await connection.getAccountInfo(userBondAccount);
-      if (!tokenAccount) {
-        toast.error('You don\'t have a token account for this bond. Please acquire some bonds first.');
-        return;
-      }
-
-      // Now check the balance of the associated token account
-      const bondBalance = await connection.getTokenAccountBalance(userBondAccount);
-      
-      if (!bondBalance || bondBalance.value.uiAmount === 0) {
-        toast.error('No bond balance found. Please acquire some bonds first.');
-        return;
-      }
-
-      console.log('Bond balance:', bondBalance.value.uiAmount);
-
-      // Generate new keypairs for the stablecoin accounts
       const stablecoinData = Keypair.generate();
       const stablecoinMint = Keypair.generate();
 
-      // Create the stablecoin program instance
-      const program = new StablecoinProgram(
+      // Create AnchorProvider
+      const provider = new AnchorProvider(
         connection,
         {
           publicKey,
-          sendTransaction: async (transaction: Transaction) => {
-            try {
-              return await sendTransaction(transaction, connection);
-            } catch (err) {
-              console.error('Error in sendTransaction:', err);
-              throw err;
-            }
-          }
-        }
+          signTransaction: async (tx: Transaction) => tx,
+          signAllTransactions: async (txs: Transaction[]) => txs,
+        },
+        { commitment: 'confirmed' }
       );
 
-      // Create the stablecoin
-      const result = await program.createStablecoin({
-        name: formData.name,
-        symbol: formData.symbol,
-        decimals: 9,
-        iconUrl: formData.icon,
-        targetCurrency: formData.currency,
-        bondMint: bondMintPubkey,
-        stablecoinData,
-        stablecoinMint,
-      });
+      // Initialize the program
+      const program = new Program(
+        IDL,
+        new PublicKey("EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d"),
+        provider
+      );
 
-      console.log('Stablecoin created successfully:', result);
+      const tx = await program.methods
+        .createStablecoin(
+          formData.name,
+          formData.symbol,
+          9, // decimals
+          formData.icon,
+          formData.currency
+        )
+        .accounts({
+          authority: publicKey,
+          stablecoinData: stablecoinData.publicKey,
+          stablecoinMint: stablecoinMint.publicKey,
+          bondMint: bondMintPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .signers([stablecoinData, stablecoinMint])
+        .transaction();
+
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature);
+
+      console.log('Stablecoin created successfully:', signature);
       toast.success('Stablecoin created successfully!');
       
-      // Reset form
-      setFormData({
-        name: '',
-        symbol: '',
-        currency: 'USD',
-        icon: '',
-        bondMint: ''
-      });
     } catch (error) {
-      console.error('Detailed error in handleSubmit:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      toast.error(`Failed to create stablecoin: ${errorMessage}`);
+      console.error('Error creating stablecoin:', error);
+      toast.error('Failed to create stablecoin: ' + (error as Error).message);
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,8 @@
 import { Connection, PublicKey, Transaction, Keypair } from '@solana/web3.js';
-import { Program, AnchorProvider, web3, BN, Wallet } from '@project-serum/anchor';
+import { Program, AnchorProvider, web3, BN } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { IDL } from './idl/stablecoin_factory';
+import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 
 // Update this to use your deployed program ID
 const PROGRAM_ID = new PublicKey("EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d");
@@ -43,7 +44,7 @@ export class StablecoinProgram {
         signTransaction: async (tx: Transaction) => tx,
         signAllTransactions: async (txs: Transaction[]) => txs,
       },
-      { preflightCommitment: 'confirmed' }
+      { commitment: 'confirmed' }
     );
 
     this.program = new Program(IDL, PROGRAM_ID, provider);
@@ -51,13 +52,6 @@ export class StablecoinProgram {
 
   async createStablecoin(params: CreateStablecoinParams) {
     try {
-      console.log('Creating stablecoin with params:', {
-        ...params,
-        bondMint: params.bondMint.toBase58(),
-        stablecoinData: params.stablecoinData.publicKey.toBase58(),
-        stablecoinMint: params.stablecoinMint.publicKey.toBase58(),
-      });
-
       const tx = await this.program.methods
         .createStablecoin(
           params.name,
@@ -72,16 +66,16 @@ export class StablecoinProgram {
           stablecoinMint: params.stablecoinMint.publicKey,
           bondMint: params.bondMint,
           tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: web3.SystemProgram.programId,
-          rent: web3.SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
         })
-        .signers([params.stablecoinData, params.stablecoinMint])
-        .rpc();
+        .transaction();
 
-      await this.connection.confirmTransaction(tx);
-      return tx;
+      const signature = await this.wallet.sendTransaction(tx, this.connection);
+      await this.connection.confirmTransaction(signature);
+      return signature;
     } catch (error) {
-      console.error('Detailed error in createStablecoin:', error);
+      console.error('Error in createStablecoin:', error);
       throw error;
     }
   }
@@ -109,10 +103,11 @@ export class StablecoinProgram {
           oracleFeed: params.oracleFeed,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .rpc();
+        .transaction();
 
-      await this.connection.confirmTransaction(tx);
-      return tx;
+      const signature = await this.wallet.sendTransaction(tx, this.connection);
+      await this.connection.confirmTransaction(signature);
+      return signature;
     } catch (error) {
       console.error('Error minting tokens:', error);
       throw error;
