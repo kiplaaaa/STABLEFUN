@@ -18,6 +18,11 @@ pub mod stablecoin_factory {
         icon_url: String,
         target_currency: String,
     ) -> Result<()> {
+        // Validate inputs
+        if decimals > 9 {
+            return Err(ErrorCode::InvalidDecimals.into());
+        }
+
         // Initialize the stablecoin data account
         let stablecoin = &mut ctx.accounts.stablecoin_data;
         stablecoin.name = name;
@@ -144,7 +149,7 @@ pub struct CreateStablecoin<'info> {
         init,
         payer = authority,
         mint::decimals = decimals,
-        mint::authority = authority,
+        mint::authority = authority.key(),
     )]
     pub stablecoin_mint: Account<'info, Mint>,
     
@@ -235,4 +240,8 @@ impl StablecoinData {
 pub enum ErrorCode {
     #[msg("Calculation overflow")]
     CalculationOverflow,
+    #[msg("Invalid bond mint")]
+    InvalidBondMint,
+    #[msg("Invalid decimals")]
+    InvalidDecimals,
 }
