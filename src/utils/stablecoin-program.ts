@@ -5,7 +5,7 @@ import { IDL } from './idl/stablecoin_factory';
 import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 
 // Update this to use your deployed program ID
-const PROGRAM_ID = new PublicKey("EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d");
+const PROGRAM_ID = new PublicKey("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
 
 interface CreateStablecoinParams {
   name: string;
