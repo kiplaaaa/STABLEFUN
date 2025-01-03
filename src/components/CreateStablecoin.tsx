@@ -1,18 +1,25 @@
 import { useState, useEffect } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, WalletContextState } from '@solana/wallet-adapter-react';
 import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { StablebondProgram, Stablebond } from '@etherfuse/stablebond-sdk';
+import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { Connection, PublicKey, Transaction, VersionedTransaction, Keypair } from '@solana/web3.js';
-import { StablecoinProgram } from '../utils/stablecoin-program';
-import * as web3 from '@solana/web3.js';
-import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
-import { Program } from '@project-serum/anchor';
-import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { IDL } from '../utils/idl/stablecoin_factory';
-import { AnchorProvider } from '@project-serum/anchor';
+import { 
+  Connection, 
+  PublicKey, 
+  Transaction, 
+  Keypair,
+  SystemProgram,
+  SYSVAR_RENT_PUBKEY,
+} from '@solana/web3.js';
+import { 
+  TOKEN_PROGRAM_ID, 
+  createInitializeMintInstruction,
+  getMinimumBalanceForRentExemptMint,
+  MINT_SIZE,
+} from '@solana/spl-token';
+import { StablecoinProgram, PROGRAM_ID } from '../utils/stablecoin-program';
+import { getErrorMessage } from '../utils/errors';
 
 interface StablebondType {
   mint: {
@@ -30,7 +37,8 @@ interface Bond {
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
-  const { publicKey, wallet } = useWallet();
+  const wallet = useWallet();
+  const { publicKey } = wallet;
   const [loading, setLoading] = useState(false);
   const [availableBonds, setAvailableBonds] = useState<Bond[]>([]);
   const [formData, setFormData] = useState({
@@ -140,59 +148,123 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!publicKey || !connection || !wallet?.adapter) {
-      toast.error('Please connect your wallet');
+    if (!publicKey || !wallet.connected || !connection) {
+      toast.error('Please connect your wallet first');
       return;
     }
 
     try {
       setLoading(true);
-      
-      const stablecoinData = Keypair.generate();
+
       const stablecoinMint = Keypair.generate();
+      const stablecoinData = Keypair.generate();
 
-      const stablecoinProgram = new StablecoinProgram(
-        connection,
-        {
-          publicKey,
-          sendTransaction: async (tx: Transaction) => {
-            try {
-              tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-              tx.feePayer = publicKey;
-
-              // Sign with the new keypairs first
-              tx.sign(stablecoinData, stablecoinMint);
-              
-              // Send the transaction through the wallet adapter
-              const signature = await wallet.adapter.sendTransaction(tx, connection);
-              await connection.confirmTransaction(signature);
-              return signature;
-            } catch (err) {
-              console.error('Transaction error:', err);
-              throw err;
-            }
-          }
-        }
-      );
-
-      const signature = await stablecoinProgram.createStablecoin({
-        name: formData.name,
-        symbol: formData.symbol,
-        decimals: 9,
-        iconUrl: formData.icon,
-        targetCurrency: formData.currency,
-        bondMint: new PublicKey(formData.bondMint),
-        stablecoinData,
-        stablecoinMint,
+      console.log('Generated keypairs:', {
+        stablecoinMint: stablecoinMint.publicKey.toString(),
+        stablecoinData: stablecoinData.publicKey.toString()
       });
 
-      toast.success('Stablecoin created successfully!');
-      console.log('Creation signature:', signature);
+      const stablecoinProgram = new StablecoinProgram(connection, wallet);
+
+      const transaction = new Transaction();
+
+      // Calculate proper space and rent
+      const mintRent = await getMinimumBalanceForRentExemptMint(connection);
+      const dataSpace = 215; // Use the exact space shown in your logs
+      const dataRent = await connection.getMinimumBalanceForRentExemption(dataSpace);
+
+      // Add account creation instructions
+      transaction.add(
+        SystemProgram.createAccount({
+          fromPubkey: publicKey,
+          newAccountPubkey: stablecoinMint.publicKey,
+          space: MINT_SIZE,
+          lamports: mintRent,
+          programId: TOKEN_PROGRAM_ID,
+        }),
+        createInitializeMintInstruction(
+          stablecoinMint.publicKey,
+          6,
+          publicKey,
+          publicKey,
+          TOKEN_PROGRAM_ID
+        ),
+        SystemProgram.createAccount({
+          fromPubkey: publicKey,
+          newAccountPubkey: stablecoinData.publicKey,
+          space: dataSpace,
+          lamports: dataRent,
+          programId: stablecoinProgram.programId,
+        })
+      );
+
+      // Add create stablecoin instruction
+      const createStablecoinIx = await stablecoinProgram.program.methods
+        .createStablecoin(
+          formData.name,
+          formData.symbol,
+          6,
+          formData.icon,
+          formData.currency
+        )
+        .accounts({
+          authority: publicKey,
+          stablecoinData: stablecoinData.publicKey,
+          stablecoinMint: stablecoinMint.publicKey,
+          bondMint: new PublicKey(formData.bondMint),
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .instruction();
+
+      transaction.add(createStablecoinIx);
+
+      // Get latest blockhash
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = publicKey;
+
+      // Sign with all required signers
+      transaction.sign(stablecoinMint, stablecoinData);
       
-    } catch (error) {
-      console.error('Error creating stablecoin:', error);
-      toast.error('Failed to create stablecoin: ' + (error as Error).message);
+      console.log('Sending transaction with signers:', {
+        feePayer: publicKey.toString(),
+        stablecoinMint: stablecoinMint.publicKey.toString(),
+        stablecoinData: stablecoinData.publicKey.toString()
+      });
+
+      // Send and confirm transaction
+      const signed = await wallet.sendTransaction(transaction, connection, {
+        signers: [stablecoinMint, stablecoinData],
+        preflightCommitment: 'confirmed',
+        maxRetries: 5
+      });
+
+      console.log('Transaction sent:', signed);
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction({
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        signature: signed
+      }, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log('Transaction confirmed:', confirmation);
+      toast.success('Stablecoin created successfully!');
+
+    } catch (err: unknown) {
+      const error = err as Error;
+      console.error('Error creating stablecoin:', {
+        message: error.message,
+        stack: error.stack,
+        details: error
+      });
+      toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
