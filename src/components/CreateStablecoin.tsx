@@ -30,7 +30,7 @@ interface Bond {
 
 export const CreateStablecoin = () => {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, wallet } = useWallet();
   const [loading, setLoading] = useState(false);
   const [availableBonds, setAvailableBonds] = useState<Bond[]>([]);
   const [formData, setFormData] = useState({
@@ -141,60 +141,54 @@ export const CreateStablecoin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!publicKey || !connection) {
+    if (!publicKey || !connection || !wallet?.adapter) {
       toast.error('Please connect your wallet');
       return;
     }
 
     try {
       setLoading(true);
-      const bondMintPubkey = new PublicKey(formData.bondMint);
+      
       const stablecoinData = Keypair.generate();
       const stablecoinMint = Keypair.generate();
 
-      // Create AnchorProvider
-      const provider = new AnchorProvider(
+      const stablecoinProgram = new StablecoinProgram(
         connection,
         {
           publicKey,
-          signTransaction: async (tx: Transaction) => tx,
-          signAllTransactions: async (txs: Transaction[]) => txs,
-        },
-        { commitment: 'confirmed' }
+          sendTransaction: async (tx: Transaction) => {
+            try {
+              tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+              tx.feePayer = publicKey;
+
+              // Sign with the new keypairs first
+              tx.sign(stablecoinData, stablecoinMint);
+              
+              // Send the transaction through the wallet adapter
+              const signature = await wallet.adapter.sendTransaction(tx, connection);
+              await connection.confirmTransaction(signature);
+              return signature;
+            } catch (err) {
+              console.error('Transaction error:', err);
+              throw err;
+            }
+          }
+        }
       );
 
-      // Initialize the program
-      const program = new Program(
-        IDL,
-        new PublicKey("EmfioDoaTmpfdSKogUxGyVJfeCp3EYHJf3rVdSPM7c4d"),
-        provider
-      );
+      const signature = await stablecoinProgram.createStablecoin({
+        name: formData.name,
+        symbol: formData.symbol,
+        decimals: 9,
+        iconUrl: formData.icon,
+        targetCurrency: formData.currency,
+        bondMint: new PublicKey(formData.bondMint),
+        stablecoinData,
+        stablecoinMint,
+      });
 
-      const tx = await program.methods
-        .createStablecoin(
-          formData.name,
-          formData.symbol,
-          9, // decimals
-          formData.icon,
-          formData.currency
-        )
-        .accounts({
-          authority: publicKey,
-          stablecoinData: stablecoinData.publicKey,
-          stablecoinMint: stablecoinMint.publicKey,
-          bondMint: bondMintPubkey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .signers([stablecoinData, stablecoinMint])
-        .transaction();
-
-      const signature = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(signature);
-
-      console.log('Stablecoin created successfully:', signature);
       toast.success('Stablecoin created successfully!');
+      console.log('Creation signature:', signature);
       
     } catch (error) {
       console.error('Error creating stablecoin:', error);

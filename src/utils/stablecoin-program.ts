@@ -18,6 +18,11 @@ interface CreateStablecoinParams {
   stablecoinMint: Keypair;
 }
 
+interface WalletAdapter {
+  publicKey: PublicKey;
+  sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
+}
+
 export class StablecoinProgram {
   private program: Program;
   private connection: Connection;
@@ -69,11 +74,11 @@ export class StablecoinProgram {
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .transaction();
+        .signers([params.stablecoinData, params.stablecoinMint])
+        .rpc();
 
-      const signature = await this.wallet.sendTransaction(tx, this.connection);
-      await this.connection.confirmTransaction(signature);
-      return signature;
+      await this.connection.confirmTransaction(tx);
+      return tx;
     } catch (error) {
       console.error('Error in createStablecoin:', error);
       throw error;
