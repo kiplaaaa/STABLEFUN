@@ -319,10 +319,10 @@ export const CreateStablecoin = () => {
           
           {formData.bondMint && (
             <div className="mt-2">
-              <span className={`text-sm ${bondBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
-                Your Balance: {bondBalance ?? 'Loading...'} {bondBalance > 0 ? 'tokens' : ''}
+              <span className={`text-sm ${bondBalance !== null && bondBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+                Your Balance: {bondBalance === null ? 'Loading...' : `${bondBalance} ${bondBalance > 0 ? 'tokens' : ''}`}
               </span>
-              {bondBalance === 0 && (
+              {bondBalance !== null && bondBalance === 0 && (
                 <p className="text-red-400 text-sm mt-1">
                   You need to have some bonds to create a stablecoin
                 </p>
