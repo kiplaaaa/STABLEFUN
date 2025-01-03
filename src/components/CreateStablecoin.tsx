@@ -8,7 +8,6 @@ import { Connection, PublicKey, Transaction, VersionedTransaction, Keypair } fro
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import * as web3 from '@solana/web3.js';
 import { getAssociatedTokenAddress } from '@solana/spl-token';
-import { GetTestBonds } from './GetTestBonds';
 
 interface StablebondType {
   mint: {
@@ -84,36 +83,47 @@ export const CreateStablecoin = () => {
   }, [connection]);
 
   // Handle bond selection
-  const handleBondSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      bondMint: e.target.value
-    }));
+  const handleBondSelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const bondMint = e.target.value;
+    setFormData(prev => ({ ...prev, bondMint }));
+    
+    if (bondMint) {
+      console.log("Checking balance for bond mint:", bondMint);
+      await checkBondBalance(bondMint);
+    }
   };
 
   const checkBondBalance = async (bondMintStr: string) => {
-    if (!publicKey || !connection) return;
-    
+    if (!publicKey || !connection) {
+      console.log("No wallet connection");
+      return;
+    }
+
     try {
       const bondMintPubkey = new PublicKey(bondMintStr);
-      const userBondAccount = await getAssociatedTokenAddress(
-        bondMintPubkey,
+      
+      // First find all token accounts owned by the user
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
         publicKey,
-        false
+        { mint: bondMintPubkey }
       );
 
-      // Check if account exists
-      const account = await connection.getAccountInfo(userBondAccount);
-      if (!account) {
-        setBondBalance(null);
-        return;
+      // Log for debugging
+      console.log("Token accounts found:", tokenAccounts.value);
+
+      if (tokenAccounts.value.length > 0) {
+        // Get the balance from the first account found
+        const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
+        console.log("Found balance:", balance);
+        setBondBalance(balance);
+      } else {
+        console.log("No token accounts found for this mint");
+        setBondBalance(0);
       }
 
-      const balance = await connection.getTokenAccountBalance(userBondAccount);
-      setBondBalance(balance.value.uiAmount);
     } catch (error) {
       console.error('Error checking bond balance:', error);
-      setBondBalance(null);
+      setBondBalance(0);
     }
   };
 
@@ -136,8 +146,11 @@ export const CreateStablecoin = () => {
       return;
     }
 
-    if (bondBalance === null || bondBalance === 0) {
-      toast.error('You need to acquire some bonds first');
+    // Force a fresh balance check before submission
+    await checkBondBalance(formData.bondMint);
+    
+    if (!bondBalance || bondBalance <= 0) {
+      toast.error('You need to have some bonds to create a stablecoin');
       return;
     }
 
@@ -306,15 +319,12 @@ export const CreateStablecoin = () => {
           
           {formData.bondMint && (
             <div className="mt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">
-                  Your Balance: {bondBalance === null ? 'No tokens' : `${bondBalance} tokens`}
-                </span>
-                <GetTestBonds bondMint={formData.bondMint} />
-              </div>
-              {bondBalance === null && (
-                <p className="text-sm text-red-400">
-                  You need to acquire some test bonds before creating a stablecoin
+              <span className={`text-sm ${bondBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+                Your Balance: {bondBalance ?? 'Loading...'} {bondBalance > 0 ? 'tokens' : ''}
+              </span>
+              {bondBalance === 0 && (
+                <p className="text-red-400 text-sm mt-1">
+                  You need to have some bonds to create a stablecoin
                 </p>
               )}
             </div>
