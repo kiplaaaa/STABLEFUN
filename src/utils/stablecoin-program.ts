@@ -1,5 +1,5 @@
 import { Connection, PublicKey, Transaction, Keypair } from '@solana/web3.js';
-import { Program, AnchorProvider, web3, BN } from '@project-serum/anchor';
+import { Program, AnchorProvider, web3, BN, Idl } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID, MINT_SIZE } from '@solana/spl-token';
 import { IDL } from './idl/stablecoin_factory';
 import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
@@ -25,11 +25,10 @@ interface WalletAdapter {
 }
 
 export class StablecoinProgram {
-  private program: Program;
   private connection: Connection;
   private wallet: WalletContextState;
-  public programId: PublicKey = PROGRAM_ID;
-  
+  private program: Program<Idl>;
+
   constructor(connection: Connection, wallet: WalletContextState) {
     if (!wallet.publicKey) {
       throw new Error('Wallet not connected');
@@ -37,16 +36,12 @@ export class StablecoinProgram {
     this.connection = connection;
     this.wallet = wallet;
 
+    // Initialize the program in constructor
     const provider = new AnchorProvider(
       connection,
-      {
-        publicKey: wallet.publicKey,
-        signTransaction: async (tx: Transaction) => tx,
-        signAllTransactions: async (txs: Transaction[]) => txs,
-      },
-      { commitment: 'confirmed' }
+      wallet as any,
+      { commitment: 'confirmed', preflightCommitment: 'confirmed' }
     );
-
     this.program = new Program(IDL, PROGRAM_ID, provider);
   }
 
@@ -56,14 +51,6 @@ export class StablecoinProgram {
     }
 
     try {
-      const provider = new AnchorProvider(
-        this.connection,
-        this.wallet as any,
-        { commitment: 'confirmed' }
-      );
-
-      const program = new Program(IDL, PROGRAM_ID, provider);
-
       // Create mint account for the stablecoin
       const mintRent = await this.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
       const createMintIx = SystemProgram.createAccount({
@@ -75,15 +62,11 @@ export class StablecoinProgram {
       });
 
       // Calculate space for data account
-      const space = 8 + // discriminator
-                    32 + // authority
-                    32 + // bond_mint
-                    8 +  // total_supply
-                    1 +  // decimals
-                    4 + params.name.length + // name
-                    4 + params.symbol.length + // symbol
-                    4 + params.iconUrl.length + // icon_url
-                    4 + params.targetCurrency.length; // target_currency
+      const space = 8 + 32 + 32 + 8 + 1 + 
+                    4 + params.name.length + 
+                    4 + params.symbol.length + 
+                    4 + params.iconUrl.length + 
+                    4 + params.targetCurrency.length;
 
       // Create data account
       const dataRent = await this.connection.getMinimumBalanceForRentExemption(space);
@@ -95,8 +78,8 @@ export class StablecoinProgram {
         programId: PROGRAM_ID,
       });
 
-      // Create stablecoin instruction
-      const createStablecoinIx = await program.methods
+      // Create stablecoin instruction using the class program instance
+      const createStablecoinIx = await this.program.methods
         .createStablecoin(
           params.name,
           params.symbol,
@@ -115,26 +98,38 @@ export class StablecoinProgram {
         })
         .instruction();
 
-      // Build and sign transaction
-      const transaction = new Transaction()
-        .add(createMintIx)
-        .add(createDataIx)
-        .add(createStablecoinIx);
+      // Get latest blockhash
+      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
 
-      const { blockhash } = await this.connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = this.wallet.publicKey;
+      // Create transaction
+      const transaction = new Transaction({
+        feePayer: this.wallet.publicKey,
+        recentBlockhash: blockhash,
+      }).add(
+        createMintIx,
+        createDataIx,
+        createStablecoinIx
+      );
 
-      // Sign with the required keypairs
-      transaction.partialSign(params.stablecoinMint);
-      transaction.partialSign(params.stablecoinData);
+      // Sign with the keypairs first
+      transaction.sign(params.stablecoinMint, params.stablecoinData);
 
-      // Send transaction
+      // Send and confirm transaction with wallet
       const signature = await this.wallet.sendTransaction(transaction, this.connection);
-      
-      await this.connection.confirmTransaction(signature, 'confirmed');
+
+      // Wait for confirmation
+      const confirmation = await this.connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      });
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
+      }
 
       return signature;
+
     } catch (error) {
       console.error('Error in createStablecoin:', error);
       throw error;

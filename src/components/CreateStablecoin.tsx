@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { web3 } from '@project-serum/anchor';
 import { useWallet, WalletContextState } from '@solana/wallet-adapter-react';
 import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -184,15 +185,23 @@ export const CreateStablecoin = () => {
     try {
       setLoading(true);
 
-      // Generate new keypairs for the stablecoin accounts
-      const stablecoinMint = Keypair.generate();
-      const stablecoinData = Keypair.generate();
+      // Check if user has enough SOL for transaction
+      const balance = await connection.getBalance(wallet.publicKey);
+      if (balance < web3.LAMPORTS_PER_SOL * 0.1) { // Require at least 0.1 SOL
+        toast.error('Insufficient SOL balance for transaction');
+        return;
+      }
 
-      // Initialize program with the entire wallet context
+      // Generate new keypairs
+      const stablecoinMint = web3.Keypair.generate();
+      const stablecoinData = web3.Keypair.generate();
+
       const stablecoinProgram = new StablecoinProgram(
         connection,
-        wallet  // Pass the entire wallet context
+        wallet
       );
+
+      toast.loading('Creating stablecoin...', { id: 'create' });
 
       const signature = await stablecoinProgram.createStablecoin({
         name: formData.name,
@@ -205,8 +214,9 @@ export const CreateStablecoin = () => {
         stablecoinMint,
       });
 
-      toast.success(`Stablecoin created successfully! Signature: ${signature}`);
-      
+      toast.success('Stablecoin created successfully!', { id: 'create' });
+      console.log('Transaction signature:', signature);
+
       // Reset form
       setFormData({
         name: '',
@@ -218,7 +228,7 @@ export const CreateStablecoin = () => {
 
     } catch (error) {
       console.error('Error creating stablecoin:', error);
-      toast.error(getErrorMessage(error));
+      toast.error(getErrorMessage(error), { id: 'create' });
     } finally {
       setLoading(false);
     }
