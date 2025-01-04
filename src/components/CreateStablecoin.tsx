@@ -147,6 +147,10 @@ export const CreateStablecoin = () => {
   }, [formData.bondMint, publicKey, connection]);
 
   const validateForm = () => {
+    if (!wallet.connected || !wallet.publicKey) {
+      toast.error('Please connect your wallet first');
+      return false;
+    }
     if (!formData.name.trim()) {
       toast.error('Name is required');
       return false;
@@ -170,41 +174,38 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
-    if (!publicKey || !wallet.connected || !connection) {
+    if (!wallet.publicKey || !wallet.connected) {
       toast.error('Please connect your wallet first');
       return;
     }
 
+    if (!validateForm()) return;
+
     try {
       setLoading(true);
 
-      // Create keypairs for the new stablecoin
+      // Generate new keypairs for the stablecoin accounts
       const stablecoinMint = Keypair.generate();
       const stablecoinData = Keypair.generate();
 
-      // Initialize program
+      // Initialize program with the entire wallet context
       const stablecoinProgram = new StablecoinProgram(
         connection,
-        {
-          publicKey,
-          sendTransaction: wallet.sendTransaction
-        }
+        wallet  // Pass the entire wallet context
       );
 
-      // Create the stablecoin
-      const tx = await stablecoinProgram.createStablecoin({
+      const signature = await stablecoinProgram.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
-        decimals: 6, // Standard for most stablecoins
+        decimals: 6,
         iconUrl: formData.icon,
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
         stablecoinData,
-        stablecoinMint
+        stablecoinMint,
       });
 
-      toast.success('Stablecoin created successfully!');
+      toast.success(`Stablecoin created successfully! Signature: ${signature}`);
       
       // Reset form
       setFormData({
@@ -320,7 +321,7 @@ export const CreateStablecoin = () => {
         
         <button
           type="submit"
-          disabled={!publicKey || loading}
+          disabled={!wallet.publicKey || loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Creating...' : 'Create Stablecoin'}
