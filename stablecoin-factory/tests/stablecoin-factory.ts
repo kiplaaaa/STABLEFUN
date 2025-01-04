@@ -8,9 +8,16 @@ describe("stablecoin-factory", () => {
 
   const program = anchor.workspace.StablecoinFactory as Program<StablecoinFactory>;
 
-  it("Is initialized!", async () => {
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
+  it("Creates a stablecoin!", async () => {
+    const tx = await program.methods
+      .createStablecoin(
+        "My Stablecoin",
+        "STBL",
+        6,
+        "https://example.com/icon.png",
+        "USD"
+      )
+      .rpc();
     console.log("Your transaction signature", tx);
   });
 });
