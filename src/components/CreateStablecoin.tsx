@@ -18,7 +18,7 @@ import {
   getMinimumBalanceForRentExemptMint,
   MINT_SIZE,
 } from '@solana/spl-token';
-import { StablecoinProgram, PROGRAM_ID } from '../utils/stablecoin-program';
+import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
 
 interface StablebondType {
@@ -164,7 +164,17 @@ export const CreateStablecoin = () => {
         stablecoinData: stablecoinData.publicKey.toString()
       });
 
-      const stablecoinProgram = new StablecoinProgram(connection, wallet);
+      if (!wallet.publicKey) {
+        throw new Error("Wallet not connected");
+      }
+
+      const stablecoinProgram = new StablecoinProgram(
+        connection,
+        {
+          publicKey: wallet.publicKey,
+          sendTransaction: wallet.sendTransaction.bind(wallet)
+        }
+      );
 
       const transaction = new Transaction();
 
@@ -198,27 +208,20 @@ export const CreateStablecoin = () => {
         })
       );
 
-      // Add create stablecoin instruction
-      const createStablecoinIx = await stablecoinProgram.program.methods
-        .createStablecoin(
-          formData.name,
-          formData.symbol,
-          6,
-          formData.icon,
-          formData.currency
-        )
-        .accounts({
-          authority: publicKey,
-          stablecoinData: stablecoinData.publicKey,
-          stablecoinMint: stablecoinMint.publicKey,
-          bondMint: new PublicKey(formData.bondMint),
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .instruction();
+      // The createStablecoin method already sends and confirms the transaction
+      const signature = await stablecoinProgram.createStablecoin({
+        name: formData.name,
+        symbol: formData.symbol,
+        decimals: 6,
+        iconUrl: formData.icon,
+        targetCurrency: formData.currency,
+        bondMint: new PublicKey(formData.bondMint),
+        stablecoinData: stablecoinData,
+        stablecoinMint: stablecoinMint
+      });
 
-      transaction.add(createStablecoinIx);
+      // You can use the signature to check the status or display to user
+      console.log("Transaction signature:", signature);
 
       // Get latest blockhash
       const latestBlockhash = await connection.getLatestBlockhash('confirmed');
