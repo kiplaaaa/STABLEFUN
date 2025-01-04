@@ -55,34 +55,59 @@ export class StablecoinProgram {
     this.program = new Program(IDL, PROGRAM_ID, provider);
   }
 
-  async createStablecoin(params: CreateStablecoinParams) {
-    try {
-      const tx = await this.program.methods
-        .createStablecoin(
-          params.name,
-          params.symbol,
-          params.decimals,
-          params.iconUrl,
-          params.targetCurrency
-        )
-        .accounts({
-          authority: this.wallet.publicKey,
-          stablecoinData: params.stablecoinData.publicKey,
-          stablecoinMint: params.stablecoinMint.publicKey,
-          bondMint: params.bondMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
-        })
-        .signers([params.stablecoinData, params.stablecoinMint])
-        .rpc();
+  async createStablecoin(params: CreateStablecoinParams): Promise<string> {
+    const provider = new AnchorProvider(
+      this.connection,
+      {
+        publicKey: this.wallet.publicKey,
+        signTransaction: async (tx: Transaction) => {
+          return tx;
+        },
+        signAllTransactions: async (txs: Transaction[]) => {
+          return txs;
+        },
+      },
+      { commitment: 'confirmed' }
+    );
 
-      await this.connection.confirmTransaction(tx);
-      return tx;
-    } catch (error) {
-      console.error('Error in createStablecoin:', error);
-      throw error;
-    }
+    const program = new Program(IDL, PROGRAM_ID, provider);
+
+    const transaction = new Transaction();
+    
+    // Add create stablecoin instruction
+    const ix = await program.methods
+      .createStablecoin(
+        params.name,
+        params.symbol,
+        params.decimals,
+        params.iconUrl,
+        params.targetCurrency
+      )
+      .accounts({
+        authority: this.wallet.publicKey,
+        stablecoinData: params.stablecoinData.publicKey,
+        stablecoinMint: params.stablecoinMint.publicKey,
+        bondMint: params.bondMint,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .instruction();
+
+    transaction.add(ix);
+
+    // Get latest blockhash
+    const latestBlockhash = await this.connection.getLatestBlockhash();
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+    transaction.feePayer = this.wallet.publicKey;
+
+    // Sign with required keypairs
+    transaction.sign(params.stablecoinMint, params.stablecoinData);
+
+    // Send transaction
+    const txid = await this.wallet.sendTransaction(transaction, this.connection);
+    
+    return txid;
   }
 
   async mintTokens(params: {
