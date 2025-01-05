@@ -141,73 +141,78 @@ export class StablecoinProgram {
         .instruction();
       console.log('Stablecoin instruction created');
 
-      // Get latest blockhash
-      console.log('Getting latest blockhash...');
-      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
-      console.log('Blockhash received:', blockhash);
-
       // Create transaction
       console.log('Building transaction...');
-      const transaction = new Transaction()
-        .add(createMintIx)
-        .add(initializeMintIx)
-        .add(createDataIx)
-        .add(createStablecoinIx);
+      const transaction = new Transaction();
+      
+      // Add all instructions
+      transaction.add(createMintIx)
+                .add(initializeMintIx)
+                .add(createDataIx)
+                .add(createStablecoinIx);
 
-      transaction.feePayer = this.wallet.publicKey;
+      // Get latest blockhash and set transaction properties
+      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
       transaction.recentBlockhash = blockhash;
+      transaction.feePayer = this.wallet.publicKey;
 
-      console.log('Transaction built with instructions:', {
-        createMint: createMintIx.programId.toBase58(),
-        initializeMint: initializeMintIx.programId.toBase58(),
-        createData: createDataIx.programId.toBase58(),
-        createStablecoin: createStablecoinIx.programId.toBase58(),
-      });
+      console.log('Transaction built, preparing for signing...');
+      
+      // Create a copy of the transaction for simulation
+      const simTransaction = Transaction.from(transaction.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false
+      }));
 
-      // Partially sign with the required keypairs
-      console.log('Signing transaction with keypairs...');
-      transaction.partialSign(params.stablecoinMint);
-      transaction.partialSign(params.stablecoinData);
-      console.log('Transaction signed with keypairs');
-
+      // Sign the simulation transaction with all required signers
+      simTransaction.sign(params.stablecoinMint, params.stablecoinData);
+      
+      console.log('Simulating transaction with signatures...');
       try {
-        console.log('Simulating transaction...');
-        const simulation = await this.connection.simulateTransaction(
-          transaction,
-          [params.stablecoinMint, params.stablecoinData]        );
+        const simulation = await this.connection.simulateTransaction(simTransaction);
+        
+        console.log('Simulation result:', {
+          err: simulation.value.err,
+          logs: simulation.value.logs,
+          unitsConsumed: simulation.value.unitsConsumed,
+        });
 
         if (simulation.value.err) {
-          console.error('Simulation failed with error:', simulation.value.err);
-          console.error('Simulation logs:', simulation.value.logs);
-          throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+          console.error('Simulation failed:', simulation.value.err);
+          throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
         }
-        
-        console.log('Simulation successful');
-        console.log('Simulation logs:', simulation.value.logs);
       } catch (simError) {
-        console.error('Simulation threw error:', simError);
-        console.error('Error details:', {
-          name: simError instanceof Error ? simError.name : 'Unknown',
-          message: simError instanceof Error ? simError.message : String(simError),
-          stack: simError instanceof Error ? simError.stack : undefined,
-        });
-        throw new Error(`Transaction simulation failed: ${simError instanceof Error ? simError.message : String(simError)}`);
+        console.error('Simulation error:', simError);
+        throw simError;
       }
 
-      // Send transaction
+      // If simulation succeeds, proceed with actual transaction
+      console.log('Simulation successful, proceeding with actual transaction...');
+
+      // Sign with auxiliary signers first
+      transaction.partialSign(params.stablecoinMint);
+      transaction.partialSign(params.stablecoinData);
+
+      console.log('Transaction signed by auxiliary signers');
+
+      // Send the transaction
       console.log('Sending transaction...');
       const signature = await this.wallet.sendTransaction(transaction, this.connection, {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
+        skipPreflight: true, // Skip preflight since we already simulated
+        maxRetries: 3,
+        preflightCommitment: 'confirmed'
       });
-      console.log('Transaction sent. Signature:', signature);
+
+      console.log('Transaction sent, signature:', signature);
 
       // Wait for confirmation
-      console.log('Waiting for transaction confirmation...');
-      const confirmation = await this.connection.confirmTransaction(signature, 'confirmed');
-      
+      const confirmation = await this.connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      }, 'confirmed');
+
       if (confirmation.value.err) {
-        console.error('Transaction confirmation failed:', confirmation.value.err);
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
@@ -217,14 +222,12 @@ export class StablecoinProgram {
     } catch (error) {
       console.error('Error in createStablecoin:', error);
       console.error('Error details:', {
-        name: error instanceof Error ? error.name : 'Unknown',
+        name: error instanceof Error ? error.name : undefined,
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
+        logs: error instanceof Error && 'logs' in error ? error.logs : undefined,
       });
-      if (typeof error === 'object' && error !== null && 'logs' in error) {
-        console.error('Program logs:', error.logs);
-      }
-      throw error;
+      throw new Error(`Transaction failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

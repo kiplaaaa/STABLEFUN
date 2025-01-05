@@ -175,7 +175,7 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wallet.publicKey || !wallet.connected) {
+    if (!wallet.publicKey || !wallet.connected || !connection) {
       toast.error('Please connect your wallet first');
       return;
     }
@@ -184,24 +184,20 @@ export const CreateStablecoin = () => {
 
     try {
       setLoading(true);
-
-      // Check if user has enough SOL for transaction
-      const balance = await connection.getBalance(wallet.publicKey);
-      if (balance < web3.LAMPORTS_PER_SOL * 0.1) { // Require at least 0.1 SOL
-        toast.error('Insufficient SOL balance for transaction');
-        return;
-      }
-
+      console.log('Creating new keypairs...');
+      
       // Generate new keypairs
-      const stablecoinMint = web3.Keypair.generate();
-      const stablecoinData = web3.Keypair.generate();
+      const stablecoinMint = Keypair.generate();
+      const stablecoinData = Keypair.generate();
 
-      const stablecoinProgram = new StablecoinProgram(
-        connection,
-        wallet
-      );
+      console.log('Keypairs created:', {
+        mintPubkey: stablecoinMint.publicKey.toBase58(),
+        dataPubkey: stablecoinData.publicKey.toBase58()
+      });
 
-      toast.loading('Creating stablecoin...', { id: 'create' });
+      const stablecoinProgram = new StablecoinProgram(connection, wallet);
+
+      toast.loading('Creating stablecoin...', { id: 'create-stablecoin' });
 
       const signature = await stablecoinProgram.createStablecoin({
         name: formData.name,
@@ -214,21 +210,12 @@ export const CreateStablecoin = () => {
         stablecoinMint,
       });
 
-      toast.success('Stablecoin created successfully!', { id: 'create' });
-      console.log('Transaction signature:', signature);
-
-      // Reset form
-      setFormData({
-        name: '',
-        symbol: '',
-        currency: 'USD',
-        icon: '',
-        bondMint: ''
-      });
+      console.log('Stablecoin created successfully:', signature);
+      toast.success('Stablecoin created!', { id: 'create-stablecoin' });
 
     } catch (error) {
       console.error('Error creating stablecoin:', error);
-      toast.error(getErrorMessage(error), { id: 'create' });
+      toast.error(getErrorMessage(error), { id: 'create-stablecoin' });
     } finally {
       setLoading(false);
     }
