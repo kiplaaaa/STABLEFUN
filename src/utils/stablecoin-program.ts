@@ -1,9 +1,8 @@
-import { Connection, PublicKey, Transaction, Keypair } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, Keypair, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID, MINT_SIZE, createInitializeMintInstruction } from '@solana/spl-token';
 import { Program, AnchorProvider, web3, BN, Idl } from '@project-serum/anchor';
-import { TOKEN_PROGRAM_ID, MINT_SIZE } from '@solana/spl-token';
-import { IDL } from './idl/stablecoin_factory';
-import { SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 import { WalletContextState } from '@solana/wallet-adapter-react';
+import { IDL } from './idl/stablecoin_factory';
 
 // Update this to use your deployed program ID
 const PROGRAM_ID = new PublicKey("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
@@ -51,15 +50,30 @@ export class StablecoinProgram {
     }
 
     try {
-      // Create mint account for the stablecoin
+      // Check for sufficient SOL balance first
+      const balance = await this.connection.getBalance(this.wallet.publicKey);
+      const minimumBalance = web3.LAMPORTS_PER_SOL * 0.1; // 0.1 SOL for safety
+      if (balance < minimumBalance) {
+        throw new Error('Insufficient SOL balance for transaction');
+      }
+
+      // Initialize mint account
       const mintRent = await this.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
       const createMintIx = SystemProgram.createAccount({
         fromPubkey: this.wallet.publicKey,
         newAccountPubkey: params.stablecoinMint.publicKey,
         space: MINT_SIZE,
-        lamports: mintRent,
+        lamports: mintRent + web3.LAMPORTS_PER_SOL * 0.002, // Add extra SOL for safety
         programId: TOKEN_PROGRAM_ID,
       });
+
+      // Initialize token mint
+      const initializeMintIx = await createInitializeMintInstruction(
+        params.stablecoinMint.publicKey,
+        params.decimals,
+        this.wallet.publicKey,
+        this.wallet.publicKey,
+      );
 
       // Calculate space for data account
       const space = 8 + 32 + 32 + 8 + 1 + 
@@ -68,17 +82,17 @@ export class StablecoinProgram {
                     4 + params.iconUrl.length + 
                     4 + params.targetCurrency.length;
 
-      // Create data account
+      // Create data account with extra lamports
       const dataRent = await this.connection.getMinimumBalanceForRentExemption(space);
       const createDataIx = SystemProgram.createAccount({
         fromPubkey: this.wallet.publicKey,
         newAccountPubkey: params.stablecoinData.publicKey,
         space,
-        lamports: dataRent,
+        lamports: dataRent + web3.LAMPORTS_PER_SOL * 0.002, // Add extra SOL for safety
         programId: PROGRAM_ID,
       });
 
-      // Create stablecoin instruction using the class program instance
+      // Create stablecoin instruction
       const createStablecoinIx = await this.program.methods
         .createStablecoin(
           params.name,
@@ -99,30 +113,44 @@ export class StablecoinProgram {
         .instruction();
 
       // Get latest blockhash
-      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('finalized');
 
       // Create transaction
       const transaction = new Transaction({
         feePayer: this.wallet.publicKey,
         recentBlockhash: blockhash,
-      }).add(
+      });
+
+      // Add all instructions in correct order
+      transaction.add(
         createMintIx,
+        initializeMintIx,
         createDataIx,
         createStablecoinIx
       );
 
-      // Sign with the keypairs first
+      // Sign with the keypairs
       transaction.sign(params.stablecoinMint, params.stablecoinData);
 
-      // Send and confirm transaction with wallet
-      const signature = await this.wallet.sendTransaction(transaction, this.connection);
+      // Simulate transaction before sending
+      const simulation = await this.connection.simulateTransaction(transaction);
+      if (simulation.value.err) {
+        throw new Error(`Transaction simulation failed: ${simulation.value.err.toString()}`);
+      }
+
+      // Send and confirm transaction
+      const signature = await this.wallet.sendTransaction(transaction, this.connection, {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 3,
+      });
 
       // Wait for confirmation
       const confirmation = await this.connection.confirmTransaction({
         signature,
         blockhash,
         lastValidBlockHeight
-      });
+      }, 'confirmed');
 
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
