@@ -18,21 +18,32 @@ pub mod stablecoin_factory {
         icon_url: String,
         target_currency: String,
     ) -> Result<()> {
-        // Validate inputs
-        if decimals > 9 {
-            return Err(ErrorCode::InvalidDecimals.into());
-        }
+        // Add validation for input parameters
+        require!(decimals <= 9, ErrorCode::InvalidDecimals); // Add decimal validation
+        require!(!name.is_empty(), ErrorCode::InvalidName);
+        require!(!symbol.is_empty(), ErrorCode::InvalidSymbol);
+        require!(!target_currency.is_empty(), ErrorCode::InvalidCurrency);
 
         // Initialize the stablecoin data account
-        let stablecoin = &mut ctx.accounts.stablecoin_data;
-        stablecoin.name = name;
-        stablecoin.symbol = symbol;
-        stablecoin.decimals = decimals;
-        stablecoin.icon_url = icon_url;
-        stablecoin.target_currency = target_currency;
-        stablecoin.authority = ctx.accounts.authority.key();
-        stablecoin.bond_mint = ctx.accounts.bond_mint.key();
-        stablecoin.total_supply = 0;
+        let stablecoin_data = &mut ctx.accounts.stablecoin_data;
+        stablecoin_data.authority = ctx.accounts.authority.key();
+        stablecoin_data.bond_mint = ctx.accounts.bond_mint.key();
+        stablecoin_data.total_supply = 0;
+        stablecoin_data.decimals = decimals;
+        stablecoin_data.name = name;
+        stablecoin_data.symbol = symbol;
+        stablecoin_data.icon_url = icon_url;
+        stablecoin_data.target_currency = target_currency;
+
+        // Initialize the mint account
+        let cpi_context = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            token::InitializeMint {
+                mint: ctx.accounts.stablecoin_mint.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
+            },
+        );
+        token::initialize_mint(cpi_context, decimals, &ctx.accounts.authority.key(), Some(&ctx.accounts.authority.key()))?;
 
         Ok(())
     }
@@ -142,6 +153,8 @@ pub struct CreateStablecoin<'info> {
         init,
         payer = authority,
         space = StablecoinData::SIZE,
+        seeds = [b"stablecoin", authority.key().as_ref(), name.as_bytes()],
+        bump
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
     
@@ -153,7 +166,11 @@ pub struct CreateStablecoin<'info> {
     )]
     pub stablecoin_mint: Account<'info, Mint>,
     
+    #[account(
+        constraint = bond_mint.decimals <= 9 @ ErrorCode::InvalidDecimals
+    )]
     pub bond_mint: Account<'info, Mint>,
+    
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
@@ -244,4 +261,10 @@ pub enum ErrorCode {
     InvalidBondMint,
     #[msg("Invalid decimals")]
     InvalidDecimals,
+    #[msg("Invalid name provided")]
+    InvalidName,
+    #[msg("Invalid symbol provided")]
+    InvalidSymbol,
+    #[msg("Invalid currency provided")]
+    InvalidCurrency,
 }

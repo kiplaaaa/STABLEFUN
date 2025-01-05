@@ -175,47 +175,40 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wallet.publicKey || !wallet.connected || !connection) {
-      toast.error('Please connect your wallet first');
-      return;
-    }
+    if (!publicKey || !connection || !wallet) return;
 
-    if (!validateForm()) return;
-
+    setLoading(true);
     try {
-      setLoading(true);
-      console.log('Creating new keypairs...');
+      const program = new StablecoinProgram(connection, wallet);
       
-      // Generate new keypairs
-      const stablecoinMint = Keypair.generate();
-      const stablecoinData = Keypair.generate();
-
-      console.log('Keypairs created:', {
-        mintPubkey: stablecoinMint.publicKey.toBase58(),
-        dataPubkey: stablecoinData.publicKey.toBase58()
-      });
-
-      const stablecoinProgram = new StablecoinProgram(connection, wallet);
-
-      toast.loading('Creating stablecoin...', { id: 'create-stablecoin' });
-
-      const signature = await stablecoinProgram.createStablecoin({
+      // Generate keypairs for the stablecoin mint and data accounts
+      const stablecoinMint = web3.Keypair.generate();
+      const stablecoinData = web3.Keypair.generate();
+      
+      const tx = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
-        decimals: 6,
+        decimals: 6, // Using fixed decimals for simplicity
         iconUrl: formData.icon,
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
-        stablecoinData,
-        stablecoinMint,
+        stablecoinMint: stablecoinMint,
+        stablecoinData: stablecoinData
       });
 
-      console.log('Stablecoin created successfully:', signature);
-      toast.success('Stablecoin created!', { id: 'create-stablecoin' });
-
+      toast.success('Stablecoin created successfully!');
+      console.log('Transaction signature:', tx);
+      // Reset form
+      setFormData({
+        name: '',
+        symbol: '',
+        currency: 'USD',
+        icon: '',
+        bondMint: ''
+      });
     } catch (error) {
       console.error('Error creating stablecoin:', error);
-      toast.error(getErrorMessage(error), { id: 'create-stablecoin' });
+      toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
