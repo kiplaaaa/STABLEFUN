@@ -1,34 +1,16 @@
 import { useState, useEffect } from 'react';
-import { web3 } from '@project-serum/anchor';
-import { useWallet, WalletContextState } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { Upload } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { StablebondProgram } from '@etherfuse/stablebond-sdk';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { 
-  Connection, 
   PublicKey, 
-  Transaction, 
   Keypair,
-  SystemProgram,
-  SYSVAR_RENT_PUBKEY,
 } from '@solana/web3.js';
-import { 
-  TOKEN_PROGRAM_ID, 
-  createInitializeMintInstruction,
-  getMinimumBalanceForRentExemptMint,
-  MINT_SIZE,
-} from '@solana/spl-token';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
 
-interface StablebondType {
-  mint: {
-    toString: () => string;
-  };
-  name: string;
-  symbol: string;
-}
 
 interface Bond {
   mint: string;
@@ -153,31 +135,6 @@ export const CreateStablecoin = () => {
     }
   }, [formData.bondMint, publicKey, connection]);
 
-  const validateForm = () => {
-    if (!wallet.connected || !wallet.publicKey) {
-      toast.error('Please connect your wallet first');
-      return false;
-    }
-    if (!formData.name.trim()) {
-      toast.error('Name is required');
-      return false;
-    }
-    if (!formData.symbol.trim()) {
-      toast.error('Symbol is required');
-      return false;
-    }
-    if (!formData.bondMint) {
-      toast.error('Bond mint is required');
-      return false;
-    }
-    try {
-      new PublicKey(formData.bondMint);
-    } catch {
-      toast.error('Invalid bond mint address');
-      return false;
-    }
-    return true;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

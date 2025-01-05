@@ -1,9 +1,8 @@
 import { Connection, PublicKey, Transaction, Keypair, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, MINT_SIZE, createInitializeMintInstruction, getMinimumBalanceForRentExemptMint } from '@solana/spl-token';
-import { Program, AnchorProvider, Provider, BN } from '@project-serum/anchor';
+import { Program, AnchorProvider, BN } from '@project-serum/anchor';
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { IDL } from './idl/stablecoin_factory';
-import { StablecoinData } from './constants';
 
 // Update this to use your deployed program ID
 const PROGRAM_ID = new PublicKey("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
@@ -19,10 +18,6 @@ interface CreateStablecoinParams {
   stablecoinMint: Keypair;
 }
 
-interface WalletAdapter {
-  publicKey: PublicKey;
-  sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
-}
 
 export class StablecoinProgram {
   program: Program;
