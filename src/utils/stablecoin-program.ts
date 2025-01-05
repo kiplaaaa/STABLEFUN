@@ -46,53 +46,80 @@ export class StablecoinProgram {
 
   async createStablecoin(params: CreateStablecoinParams): Promise<string> {
     if (!this.wallet.publicKey) {
+      console.error('Wallet connection error: No public key found');
       throw new Error('Wallet not connected');
     }
 
     try {
-      // Check for sufficient SOL balance first
+      console.log('Starting stablecoin creation process...');
+      console.log('Params:', {
+        name: params.name,
+        symbol: params.symbol,
+        decimals: params.decimals,
+        targetCurrency: params.targetCurrency,
+        bondMint: params.bondMint.toBase58(),
+        stablecoinMint: params.stablecoinMint.publicKey.toBase58(),
+        stablecoinData: params.stablecoinData.publicKey.toBase58(),
+      });
+
+      // Check for sufficient SOL balance
       const balance = await this.connection.getBalance(this.wallet.publicKey);
-      const minimumBalance = web3.LAMPORTS_PER_SOL * 0.1; // 0.1 SOL for safety
+      console.log('Current wallet balance:', balance / web3.LAMPORTS_PER_SOL, 'SOL');
+      
+      const minimumBalance = web3.LAMPORTS_PER_SOL * 0.1;
       if (balance < minimumBalance) {
+        console.error('Insufficient balance:', balance / web3.LAMPORTS_PER_SOL, 'SOL');
         throw new Error('Insufficient SOL balance for transaction');
       }
 
-      // Initialize mint account
+      // Create mint account
+      console.log('Creating mint account...');
       const mintRent = await this.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+      console.log('Mint rent:', mintRent / web3.LAMPORTS_PER_SOL, 'SOL');
+      
       const createMintIx = SystemProgram.createAccount({
         fromPubkey: this.wallet.publicKey,
         newAccountPubkey: params.stablecoinMint.publicKey,
         space: MINT_SIZE,
-        lamports: mintRent + web3.LAMPORTS_PER_SOL * 0.002, // Add extra SOL for safety
+        lamports: mintRent,
         programId: TOKEN_PROGRAM_ID,
       });
+      console.log('Mint account instruction created');
 
-      // Initialize token mint
-      const initializeMintIx = await createInitializeMintInstruction(
+      // Initialize mint
+      console.log('Creating initialize mint instruction...');
+      const initializeMintIx = createInitializeMintInstruction(
         params.stablecoinMint.publicKey,
         params.decimals,
         this.wallet.publicKey,
         this.wallet.publicKey,
+        TOKEN_PROGRAM_ID
       );
+      console.log('Initialize mint instruction created');
 
-      // Calculate space for data account
+      // Create data account
+      console.log('Calculating data account space...');
       const space = 8 + 32 + 32 + 8 + 1 + 
-                    4 + params.name.length + 
-                    4 + params.symbol.length + 
-                    4 + params.iconUrl.length + 
-                    4 + params.targetCurrency.length;
+                    4 + Buffer.from(params.name).length + 
+                    4 + Buffer.from(params.symbol).length + 
+                    4 + Buffer.from(params.iconUrl).length + 
+                    4 + Buffer.from(params.targetCurrency).length;
+      console.log('Data account space required:', space, 'bytes');
 
-      // Create data account with extra lamports
       const dataRent = await this.connection.getMinimumBalanceForRentExemption(space);
+      console.log('Data account rent:', dataRent / web3.LAMPORTS_PER_SOL, 'SOL');
+
       const createDataIx = SystemProgram.createAccount({
         fromPubkey: this.wallet.publicKey,
         newAccountPubkey: params.stablecoinData.publicKey,
         space,
-        lamports: dataRent + web3.LAMPORTS_PER_SOL * 0.002, // Add extra SOL for safety
+        lamports: dataRent,
         programId: PROGRAM_ID,
       });
+      console.log('Data account instruction created');
 
       // Create stablecoin instruction
+      console.log('Creating stablecoin instruction...');
       const createStablecoinIx = await this.program.methods
         .createStablecoin(
           params.name,
@@ -110,56 +137,93 @@ export class StablecoinProgram {
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
+        .signers([params.stablecoinMint, params.stablecoinData])
         .instruction();
+      console.log('Stablecoin instruction created');
 
       // Get latest blockhash
-      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('finalized');
+      console.log('Getting latest blockhash...');
+      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+      console.log('Blockhash received:', blockhash);
 
       // Create transaction
-      const transaction = new Transaction({
-        feePayer: this.wallet.publicKey,
-        recentBlockhash: blockhash,
+      console.log('Building transaction...');
+      const transaction = new Transaction()
+        .add(createMintIx)
+        .add(initializeMintIx)
+        .add(createDataIx)
+        .add(createStablecoinIx);
+
+      transaction.feePayer = this.wallet.publicKey;
+      transaction.recentBlockhash = blockhash;
+
+      console.log('Transaction built with instructions:', {
+        createMint: createMintIx.programId.toBase58(),
+        initializeMint: initializeMintIx.programId.toBase58(),
+        createData: createDataIx.programId.toBase58(),
+        createStablecoin: createStablecoinIx.programId.toBase58(),
       });
 
-      // Add all instructions in correct order
-      transaction.add(
-        createMintIx,
-        initializeMintIx,
-        createDataIx,
-        createStablecoinIx
-      );
+      // Partially sign with the required keypairs
+      console.log('Signing transaction with keypairs...');
+      transaction.partialSign(params.stablecoinMint);
+      transaction.partialSign(params.stablecoinData);
+      console.log('Transaction signed with keypairs');
 
-      // Sign with the keypairs
-      transaction.sign(params.stablecoinMint, params.stablecoinData);
+      try {
+        console.log('Simulating transaction...');
+        const simulation = await this.connection.simulateTransaction(
+          transaction,
+          [params.stablecoinMint, params.stablecoinData]        );
 
-      // Simulate transaction before sending
-      const simulation = await this.connection.simulateTransaction(transaction);
-      if (simulation.value.err) {
-        throw new Error(`Transaction simulation failed: ${simulation.value.err.toString()}`);
+        if (simulation.value.err) {
+          console.error('Simulation failed with error:', simulation.value.err);
+          console.error('Simulation logs:', simulation.value.logs);
+          throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+        }
+        
+        console.log('Simulation successful');
+        console.log('Simulation logs:', simulation.value.logs);
+      } catch (simError) {
+        console.error('Simulation threw error:', simError);
+        console.error('Error details:', {
+          name: simError instanceof Error ? simError.name : 'Unknown',
+          message: simError instanceof Error ? simError.message : String(simError),
+          stack: simError instanceof Error ? simError.stack : undefined,
+        });
+        throw new Error(`Transaction simulation failed: ${simError instanceof Error ? simError.message : String(simError)}`);
       }
 
-      // Send and confirm transaction
+      // Send transaction
+      console.log('Sending transaction...');
       const signature = await this.wallet.sendTransaction(transaction, this.connection, {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
-        maxRetries: 3,
       });
+      console.log('Transaction sent. Signature:', signature);
 
       // Wait for confirmation
-      const confirmation = await this.connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight
-      }, 'confirmed');
-
+      console.log('Waiting for transaction confirmation...');
+      const confirmation = await this.connection.confirmTransaction(signature, 'confirmed');
+      
       if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
+        console.error('Transaction confirmation failed:', confirmation.value.err);
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
+      console.log('Transaction confirmed successfully!');
       return signature;
 
     } catch (error) {
       console.error('Error in createStablecoin:', error);
+      console.error('Error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      if (typeof error === 'object' && error !== null && 'logs' in error) {
+        console.error('Program logs:', error.logs);
+      }
       throw error;
     }
   }
