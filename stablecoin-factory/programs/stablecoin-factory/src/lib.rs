@@ -6,6 +6,8 @@ use switchboard_solana::AggregatorAccountData;
 
 declare_id!("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
 
+const MINT_SIZE: usize = 82;
+
 #[program]
 pub mod stablecoin_factory {
     use super::*;
@@ -18,8 +20,10 @@ pub mod stablecoin_factory {
         icon_url: String,
         target_currency: String,
     ) -> Result<()> {
-        // Add validation for input parameters
-        require!(decimals <= 9, ErrorCode::InvalidDecimals); // Add decimal validation
+        msg!("Creating stablecoin with name: {}", name);
+        
+        // Add validation
+        require!(decimals <= 9, ErrorCode::InvalidDecimals);
         require!(!name.is_empty(), ErrorCode::InvalidName);
         require!(!symbol.is_empty(), ErrorCode::InvalidSymbol);
         require!(!target_currency.is_empty(), ErrorCode::InvalidCurrency);
@@ -35,16 +39,7 @@ pub mod stablecoin_factory {
         stablecoin_data.icon_url = icon_url;
         stablecoin_data.target_currency = target_currency;
 
-        // Initialize the mint account
-        let cpi_context = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            token::InitializeMint {
-                mint: ctx.accounts.stablecoin_mint.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info(),
-            },
-        );
-        token::initialize_mint(cpi_context, decimals, &ctx.accounts.authority.key(), Some(&ctx.accounts.authority.key()))?;
-
+        msg!("Stablecoin created successfully");
         Ok(())
     }
 
@@ -153,22 +148,18 @@ pub struct CreateStablecoin<'info> {
         init,
         payer = authority,
         space = StablecoinData::SIZE,
-        seeds = [b"stablecoin", authority.key().as_ref(), name.as_bytes()],
+        seeds = [
+            b"stablecoin",
+            authority.key().as_ref(),
+            name.as_bytes()
+        ],
         bump
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
     
-    #[account(
-        init,
-        payer = authority,
-        mint::decimals = decimals,
-        mint::authority = authority.key(),
-    )]
+    #[account(mut)]
     pub stablecoin_mint: Account<'info, Mint>,
     
-    #[account(
-        constraint = bond_mint.decimals <= 9 @ ErrorCode::InvalidDecimals
-    )]
     pub bond_mint: Account<'info, Mint>,
     
     pub token_program: Program<'info, Token>,
@@ -247,10 +238,10 @@ impl StablecoinData {
                            32 + // bond_mint
                            8 +  // total_supply
                            1 +  // decimals
-                           4 + 32 + // name (4 bytes for length + max 32 bytes for string)
-                           4 + 8 +  // symbol (4 bytes for length + max 8 bytes for string)
-                           4 + 32 + // icon_url (4 bytes for length + max 32 bytes for string)
-                           4 + 8;   // target_currency (4 bytes for length + max 8 bytes for string)
+                           4 + 32 + // name
+                           4 + 8 +  // symbol
+                           4 + 128 + // icon_url (increased size)
+                           4 + 8;   // target_currency
 }
 
 #[error_code]

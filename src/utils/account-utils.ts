@@ -1,5 +1,6 @@
 import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
+import { PROGRAM_ID } from './constants';
 
 export interface StablecoinAccounts {
   authority: PublicKey;
@@ -57,19 +58,18 @@ export async function getStablecoinAccounts(
   oracleFeed: PublicKey,
   sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>
 ): Promise<StablecoinAccounts> {
+  // Initialize all required accounts first
+  const [stablecoinData] = await PublicKey.findProgramAddress(
+    [Buffer.from("stablecoin"), stablecoinMint.toBuffer()],
+    PROGRAM_ID
+  );
+
+  // Create associated token accounts if they don't exist
   const userBondAccount = await getOrCreateAssociatedTokenAccount(
     connection,
     wallet,
     bondMint,
     wallet,
-    sendTransaction
-  );
-
-  const programBondAccount = await getOrCreateAssociatedTokenAccount(
-    connection,
-    wallet,
-    bondMint,
-    stablecoinMint,
     sendTransaction
   );
 
@@ -81,12 +81,17 @@ export async function getStablecoinAccounts(
     sendTransaction
   );
 
+  const [programBondAccount] = await PublicKey.findProgramAddress(
+    [Buffer.from("bond"), bondMint.toBuffer()],
+    PROGRAM_ID
+  );
+
   return {
     authority: wallet,
-    stablecoinData: stablecoinMint,
+    stablecoinData,
     stablecoinMint,
     userBondAccount: userBondAccount.address,
-    programBondAccount: programBondAccount.address,
+    programBondAccount,
     userTokenAccount: userTokenAccount.address,
     oracleFeed,
     tokenProgram: TOKEN_PROGRAM_ID

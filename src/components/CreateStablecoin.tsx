@@ -101,6 +101,12 @@ export const CreateStablecoin = () => {
     const bondMint = e.target.value;
     setFormData(prev => ({ ...prev, bondMint }));
     
+    // Add validation before checking balance
+    if (!PublicKey.isOnCurve(new PublicKey(bondMint))) {
+      toast.error('Invalid bond mint address');
+      return;
+    }
+
     if (bondMint) {
       console.log("Checking balance for bond mint:", bondMint);
       await checkBondBalance(bondMint);
@@ -175,39 +181,45 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !connection || !wallet) return;
+    if (!wallet.publicKey || !connection) return;
 
-    setLoading(true);
     try {
+      setLoading(true);
+      console.log('Creating stablecoin with params:', formData); // Debug log
+
+      // Create keypairs for the new accounts
+      const stablecoinMint = Keypair.generate();
+      const stablecoinData = Keypair.generate();
+
       const program = new StablecoinProgram(connection, wallet);
-      
-      // Generate keypairs for the stablecoin mint and data accounts
-      const stablecoinMint = web3.Keypair.generate();
-      const stablecoinData = web3.Keypair.generate();
-      
-      const tx = await program.createStablecoin({
+
+      // Log the parameters being passed
+      console.log('Program parameters:', {
         name: formData.name,
         symbol: formData.symbol,
-        decimals: 6, // Using fixed decimals for simplicity
-        iconUrl: formData.icon,
+        decimals: 6, // Using fixed decimals for now
+        iconUrl: formData.icon || 'https://example.com/icon.png',
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
+        stablecoinData: stablecoinData,
         stablecoinMint: stablecoinMint,
-        stablecoinData: stablecoinData
       });
 
-      toast.success('Stablecoin created successfully!');
-      console.log('Transaction signature:', tx);
-      // Reset form
-      setFormData({
-        name: '',
-        symbol: '',
-        currency: 'USD',
-        icon: '',
-        bondMint: ''
+      const signature = await program.createStablecoin({
+        name: formData.name,
+        symbol: formData.symbol,
+        decimals: 6, // Using fixed decimals for now
+        iconUrl: formData.icon || 'https://example.com/icon.png',
+        targetCurrency: formData.currency,
+        bondMint: new PublicKey(formData.bondMint),
+        stablecoinData: stablecoinData,
+        stablecoinMint: stablecoinMint,
       });
+
+      console.log('Transaction signature:', signature);
+      toast.success('Stablecoin created successfully!');
     } catch (error) {
-      console.error('Error creating stablecoin:', error);
+      console.error('Detailed error:', error);
       toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
