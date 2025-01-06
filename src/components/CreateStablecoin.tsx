@@ -145,9 +145,11 @@ export const CreateStablecoin = () => {
     try {
         const program = new StablecoinProgram(connection, wallet);
         
-        // Generate keypair for the mint
+        // Generate new keypairs for both the mint and data accounts
         const stablecoinMint = Keypair.generate();
+        const stablecoinData = Keypair.generate();
         
+        // Create the stablecoin with both new keypairs
         const signature = await program.createStablecoin({
             name: formData.name,
             symbol: formData.symbol,
@@ -155,7 +157,7 @@ export const CreateStablecoin = () => {
             iconUrl: formData.iconUrl || 'https://example.com/icon.png',
             targetCurrency: formData.currency,
             bondMint: new PublicKey(formData.bondMint),
-            stablecoinData: Keypair.generate(),
+            stablecoinData: stablecoinData,  // Pass the new data account keypair
             stablecoinMint: stablecoinMint
         });
 
