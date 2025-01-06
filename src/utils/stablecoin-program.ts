@@ -5,16 +5,32 @@ import { WalletContextState } from '@solana/wallet-adapter-react';
 import { IDL } from './idl/stablecoin_factory';
 import { PROGRAM_ID } from './constants';
 
+interface SigningWallet extends WalletContextState {
+  signTransaction: NonNullable<WalletContextState['signTransaction']>;
+  publicKey: NonNullable<WalletContextState['publicKey']>;
+}
+
+function isSigningWallet(wallet: WalletContextState): wallet is SigningWallet {
+  return !!wallet.signTransaction && !!wallet.publicKey;
+}
+
 export class StablecoinProgram {
   private program: Program<Idl>;
+  private wallet: SigningWallet;
 
   constructor(
     private connection: Connection,
-    private wallet: WalletContextState
+    wallet: WalletContextState
   ) {
     if (!PROGRAM_ID) {
       throw new Error('Program ID not configured');
     }
+
+    if (!isSigningWallet(wallet)) {
+      throw new Error('Wallet does not support required features');
+    }
+
+    this.wallet = wallet;
 
     const provider = new AnchorProvider(
       connection,
@@ -30,9 +46,13 @@ export class StablecoinProgram {
       throw new Error('Wallet not connected');
     }
 
+    if (!this.wallet.signTransaction) {
+      throw new Error('Wallet does not support transaction signing');
+    }
+
     try {
-      // Generate keypair for stablecoin data account
-      const stablecoinData = Keypair.generate();
+      // Get latest blockhash
+      const latestBlockhash = await this.connection.getLatestBlockhash('confirmed');
       
       // Create the transaction
       const tx = await this.program.methods
@@ -45,17 +65,39 @@ export class StablecoinProgram {
         )
         .accounts({
           authority: this.wallet.publicKey,
-          stablecoinData: stablecoinData.publicKey,
+          stablecoinData: params.stablecoinData.publicKey,
           stablecoinMint: params.stablecoinMint.publicKey,
           bondMint: params.bondMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .signers([stablecoinData, params.stablecoinMint])
-        .rpc();
+        .signers([params.stablecoinData, params.stablecoinMint])
+        .transaction();
 
-      return tx;
+      // Set the fresh blockhash
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.feePayer = this.wallet.publicKey;
+
+      // Send and confirm transaction with retry logic
+      const signedTx = await this.wallet.signTransaction(tx);
+      if (!signedTx) {
+        throw new Error('Failed to sign transaction');
+      }
+      const signature = await this.connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 3
+      });
+
+      // Wait for confirmation
+      await this.connection.confirmTransaction({
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+      });
+
+      return signature;
     } catch (error) {
       console.error('Error creating stablecoin:', error);
       throw error;
