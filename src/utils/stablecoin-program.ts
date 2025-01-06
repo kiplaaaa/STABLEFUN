@@ -40,6 +40,11 @@ export class StablecoinProgram {
       // Create the transaction
       const tx = new Transaction();
 
+      // Get the latest blockhash
+      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = this.wallet.publicKey;
+
       // Add the create mint account instruction
       tx.add(
         SystemProgram.createAccount({
@@ -88,8 +93,16 @@ export class StablecoinProgram {
       tx.partialSign(stablecoinMint);
 
       // Send and confirm transaction
-      const signature = await this.wallet.sendTransaction(tx, this.connection);
-      await this.connection.confirmTransaction(signature);
+      const signature = await this.wallet.sendTransaction(tx, this.connection, {
+        signers: [stablecoinMint]
+      });
+
+      // Wait for confirmation
+      await this.connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight: await this.connection.getBlockHeight()
+      });
 
       return signature;
 

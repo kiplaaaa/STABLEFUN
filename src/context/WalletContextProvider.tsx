@@ -4,10 +4,13 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { toast } from 'react-hot-toast';
-
-const endpoint = 'https://api.devnet.solana.com';
+import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
+import { clusterApiUrl } from '@solana/web3.js';
 
 export const WalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
+  const network = WalletAdapterNetwork.Devnet;
+  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+  
   const wallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
@@ -17,10 +20,10 @@ export const WalletContextProvider: FC<{ children: ReactNode }> = ({ children })
   );
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
+    <ConnectionProvider endpoint={endpoint} config={{ commitment: 'confirmed' }}>
       <WalletProvider 
         wallets={wallets} 
-        autoConnect 
+        autoConnect
         onError={(error) => {
           console.error('Wallet error:', error);
           toast.error(error.message);
