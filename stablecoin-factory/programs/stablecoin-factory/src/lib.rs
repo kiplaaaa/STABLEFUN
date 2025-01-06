@@ -48,15 +48,17 @@ pub mod stablecoin_factory {
         msg!("Target Currency: {}", target_currency);
         msg!("Bond mint: {}", ctx.accounts.bond_mint.key());
         
-        msg!("Creating stablecoin with name: {}", name);
-
         // Add validation
         require!(decimals <= 9, ErrorCode::InvalidDecimals);
         require!(!name.is_empty() && name.len() <= MAX_NAME_LENGTH, ErrorCode::InvalidName);
         require!(!symbol.is_empty() && symbol.len() <= MAX_SYMBOL_LENGTH, ErrorCode::InvalidSymbol);
         require!(!icon_url.is_empty() && icon_url.len() <= MAX_ICON_URL_LENGTH, ErrorCode::InvalidIconUrl);
         require!(!target_currency.is_empty() && target_currency.len() <= MAX_TARGET_CURRENCY_LENGTH, ErrorCode::InvalidCurrency);
-        require!(ctx.accounts.bond_mint.is_initialized, ErrorCode::InvalidBondMint);
+        
+        // Validate bond mint
+        let bond_mint = &ctx.accounts.bond_mint;
+        require!(bond_mint.is_initialized, ErrorCode::InvalidBondMint);
+        require!(bond_mint.mint_authority.is_some(), ErrorCode::InvalidBondMint);
 
         // Initialize the stablecoin data account
         let stablecoin_data = &mut ctx.accounts.stablecoin_data;
@@ -190,11 +192,21 @@ pub struct CreateStablecoin<'info> {
     )]
     pub stablecoin_mint: Account<'info, Mint>,
 
-    #[account(
-        constraint = bond_mint.mint_authority.is_some(),
-        owner = token::ID
-    )]
     pub bond_mint: Account<'info, Mint>,
+
+    #[account(
+        mut,
+        associated_token::mint = bond_mint,
+        associated_token::authority = authority
+    )]
+    pub user_bond_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"bond", bond_mint.key().as_ref()],
+        bump
+    )]
+    pub program_bond_account: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

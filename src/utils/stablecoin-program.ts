@@ -4,6 +4,7 @@ import { Program, AnchorProvider, BN, Idl } from '@project-serum/anchor';
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { IDL } from './idl/stablecoin_factory';
 import { PROGRAM_ID } from './constants';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 
 interface SigningWallet extends WalletContextState {
   signTransaction: NonNullable<WalletContextState['signTransaction']>;
@@ -46,15 +47,19 @@ export class StablecoinProgram {
       throw new Error('Wallet not connected');
     }
 
-    if (!this.wallet.signTransaction) {
-      throw new Error('Wallet does not support transaction signing');
-    }
-
     try {
-      // Get latest blockhash
-      const latestBlockhash = await this.connection.getLatestBlockhash('confirmed');
-      
-      // Create the transaction
+      // Get or create the program's bond account
+      const [programBondAccount] = PublicKey.findProgramAddressSync(
+        [Buffer.from('bond'), params.bondMint.toBuffer()],
+        PROGRAM_ID
+      );
+
+      console.log('Creating stablecoin with accounts:', {
+        userBondAccount: params.userBondAccount.toString(),
+        programBondAccount: programBondAccount.toString(),
+        bondMint: params.bondMint.toString()
+      });
+
       const tx = await this.program.methods
         .createStablecoin(
           params.name,
@@ -68,44 +73,18 @@ export class StablecoinProgram {
           stablecoinData: params.stablecoinData.publicKey,
           stablecoinMint: params.stablecoinMint.publicKey,
           bondMint: params.bondMint,
+          userBondAccount: params.userBondAccount,
+          programBondAccount: programBondAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .signers([
-          params.stablecoinData,
-          params.stablecoinMint
-        ])
-        .transaction();
+        .signers([params.stablecoinData, params.stablecoinMint])
+        .rpc();
 
-      // Set the fresh blockhash
-      tx.recentBlockhash = latestBlockhash.blockhash;
-      tx.feePayer = this.wallet.publicKey;
-
-      // Sign with the wallet (authority)
-      const signedTx = await this.wallet.signTransaction(tx);
-      
-      // Partially sign with the other required signers
-      signedTx.partialSign(params.stablecoinData);
-      signedTx.partialSign(params.stablecoinMint);
-
-      // Send and confirm transaction
-      const signature = await this.connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
-        maxRetries: 3
-      });
-
-      // Wait for confirmation
-      await this.connection.confirmTransaction({
-        signature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
-      });
-
-      return signature;
+      return tx;
     } catch (error) {
-      console.error('Error creating stablecoin:', error);
+      console.error('Error in createStablecoin:', error);
       throw error;
     }
   }
@@ -187,4 +166,5 @@ export interface CreateStablecoinParams {
   bondMint: PublicKey;
   stablecoinData: Keypair;
   stablecoinMint: Keypair;
+  userBondAccount: PublicKey;
 } 

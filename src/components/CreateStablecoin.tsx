@@ -10,7 +10,7 @@ import {
 } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 
 interface Bond {
@@ -80,48 +80,58 @@ export const CreateStablecoin = () => {
   }, [connection]);
 
   // Handle bond selection
-  const handleBondSelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleBondSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const bondMint = e.target.value;
+    console.log('Selected bond:', bondMint);
     setFormData(prev => ({ ...prev, bondMint }));
-    
-    // Add validation before checking balance
-    if (!PublicKey.isOnCurve(new PublicKey(bondMint))) {
-      toast.error('Invalid bond mint address');
-      return;
-    }
-
-    if (bondMint) {
-      console.log("Checking balance for bond mint:", bondMint);
-      await checkBondBalance(bondMint);
-    }
   };
 
-  const checkBondBalance = async (bondMintStr: string) => {
-    if (!publicKey || !connection) {
-      console.log("No wallet connection");
-      return;
-    }
+  const checkBondBalance = async (bondMintAddress: string) => {
+    if (!publicKey || !connection) return;
 
     try {
-      const bondMintPubkey = new PublicKey(bondMintStr);
-      
-      // First find all token accounts owned by the user
-      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      console.log('Checking bond balance for:', bondMintAddress);
+      const bondMintPubkey = new PublicKey(bondMintAddress);
+
+      // Get the ATA address first
+      const ata = await getAssociatedTokenAddress(
+        bondMintPubkey,
         publicKey,
-        { mint: bondMintPubkey }
+        false, // allowOwnerOffCurve
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
       );
 
-      // Log for debugging
-      console.log("Token accounts found:", tokenAccounts.value);
+      console.log('Checking ATA:', ata.toString());
 
+      // Get all token accounts by owner
+      const tokenAccounts = await connection.getTokenAccountsByOwner(
+        publicKey,
+        {
+          mint: bondMintPubkey,
+        }
+      );
+
+      console.log('Found token accounts:', tokenAccounts.value);
+
+      // Check if we have any accounts
       if (tokenAccounts.value.length > 0) {
-        // Get the balance from the first account found
-        const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
-        console.log("Found balance:", balance);
-        setBondBalance(balance);
+        // Get the balance of the first account (should be the ATA)
+        const accountInfo = await connection.getTokenAccountBalance(tokenAccounts.value[0].pubkey);
+        const balance = accountInfo.value.uiAmount;
+        console.log('Found balance:', balance);
+        setBondBalance(balance || 0);
       } else {
-        console.log("No token accounts found for this mint");
-        setBondBalance(0);
+        // Try to get the ATA directly
+        try {
+          const accountInfo = await connection.getTokenAccountBalance(ata);
+          const balance = accountInfo.value.uiAmount;
+          console.log('Found ATA balance:', balance);
+          setBondBalance(balance || 0);
+        } catch (e) {
+          console.log('No ATA found or zero balance');
+          setBondBalance(0);
+        }
       }
 
     } catch (error) {
@@ -130,50 +140,78 @@ export const CreateStablecoin = () => {
     }
   };
 
+  // Add this useEffect to monitor bond selection changes
   useEffect(() => {
-    if (formData.bondMint) {
-      checkBondBalance(formData.bondMint);
-    }
-  }, [formData.bondMint, publicKey, connection]);
+    const loadBondBalance = async () => {
+      if (formData.bondMint && publicKey && connection) {
+        await checkBondBalance(formData.bondMint);
+      }
+    };
 
+    loadBondBalance();
+  }, [formData.bondMint, publicKey, connection]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !connection) return;
+    if (!publicKey || !connection || !formData.bondMint) return;
 
     try {
-        // Verify the bond mint account
-        const bondMintInfo = await connection.getAccountInfo(new PublicKey(formData.bondMint));
-        if (!bondMintInfo || bondMintInfo.owner.toString() !== TOKEN_PROGRAM_ID.toString()) {
-            toast.error('Invalid bond mint account');
-            return;
-        }
+      setLoading(true);
+      
+      const bondMintPubkey = new PublicKey(formData.bondMint);
+      
+      // Get all token accounts owned by the user
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+        publicKey,
+        { programId: TOKEN_PROGRAM_ID }
+      );
 
-        setLoading(true);
-        const program = new StablecoinProgram(connection, wallet);
-        
-        // Generate new keypairs for both accounts
-        const stablecoinMint = Keypair.generate();
-        const stablecoinData = Keypair.generate();
-        
-        const signature = await program.createStablecoin({
-            name: formData.name,
-            symbol: formData.symbol,
-            decimals: 9,
-            iconUrl: formData.iconUrl || 'https://example.com/icon.png',
-            targetCurrency: formData.currency,
-            bondMint: new PublicKey(formData.bondMint),
-            stablecoinData,  // Pass the entire keypair
-            stablecoinMint   // Pass the entire keypair
-        });
+      // Find the specific token account for this bond
+      const bondAccount = tokenAccounts.value.find(
+        account => account.account.data.parsed.info.mint === formData.bondMint
+      );
 
-        toast.success('Stablecoin created successfully!');
-        console.log('Transaction signature:', signature);
+      if (!bondAccount) {
+        toast.error('Bond token account not found');
+        return;
+      }
+
+      const balance = Number(bondAccount.account.data.parsed.info.tokenAmount.uiAmount);
+      if (balance <= 0) {
+        toast.error('Insufficient bond balance');
+        return;
+      }
+
+      console.log('Creating stablecoin with bond account:', {
+        bondMint: formData.bondMint,
+        bondAccount: bondAccount.pubkey.toString(),
+        balance: balance
+      });
+
+      const program = new StablecoinProgram(connection, wallet);
+      
+      const stablecoinMint = Keypair.generate();
+      const stablecoinData = Keypair.generate();
+
+      const signature = await program.createStablecoin({
+        name: formData.name,
+        symbol: formData.symbol,
+        decimals: 9,
+        iconUrl: formData.iconUrl || 'https://example.com/icon.png',
+        targetCurrency: formData.currency,
+        bondMint: bondMintPubkey,
+        stablecoinData,
+        stablecoinMint,
+        userBondAccount: bondAccount.pubkey // Pass the actual token account pubkey
+      });
+
+      toast.success('Stablecoin created successfully!');
+      console.log('Transaction signature:', signature);
     } catch (error) {
-        console.error('Error:', error);
-        toast.error(getErrorMessage(error));
+      console.error('Error creating stablecoin:', error);
+      toast.error(getErrorMessage(error));
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -254,31 +292,35 @@ export const CreateStablecoin = () => {
           </div>
         </div>
         
-        <div>
-          <label className="block text-gray-300 text-sm mb-2">
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">
             Bond
           </label>
           <select
             value={formData.bondMint}
             onChange={handleBondSelect}
-            className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
-                     px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
-                     transition-colors appearance-none"
+            className="input-primary"
+            required
           >
             <option value="">Select a bond</option>
             {availableBonds.map((bond) => (
               <option key={bond.mint} value={bond.mint}>
-                {bond.symbol} - {bond.name}
+                {bond.name}
               </option>
             ))}
           </select>
           
           {formData.bondMint && (
             <div className="mt-2">
-              <span className={`text-sm ${bondBalance !== null && bondBalance > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
-                Your Balance: {bondBalance === null ? 'Loading...' : `${bondBalance} ${bondBalance > 0 ? 'tokens' : ''}`}
-              </span>
-              {bondBalance !== null && bondBalance === 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm">
+                  Your Balance: 
+                </span>
+                <span className={`text-sm ${bondBalance !== null && bondBalance > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {bondBalance !== null ? bondBalance.toString() : 'Loading...'} tokens
+                </span>
+              </div>
+              {bondBalance === 0 && (
                 <p className="text-red-400 text-sm mt-1">
                   You need to have some bonds to create a stablecoin
                 </p>
