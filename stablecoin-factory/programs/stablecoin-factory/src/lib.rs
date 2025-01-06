@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "program", compiler_builtins::stack_size = "8192")]
+// #![cfg_attr(feature = "program", compiler_builtins::stack_size = "8192")]
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
