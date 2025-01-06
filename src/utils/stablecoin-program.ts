@@ -37,74 +37,89 @@ export class StablecoinProgram {
       // Calculate the minimum rent for the mint account
       const mintRent = await getMinimumBalanceForRentExemptMint(this.connection);
 
-      // Create the transaction
-      const tx = new Transaction();
-
       // Get the latest blockhash
-      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = this.wallet.publicKey;
+      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
 
-      // Add the create mint account instruction
-      tx.add(
-        SystemProgram.createAccount({
-          fromPubkey: this.wallet.publicKey,
-          newAccountPubkey: stablecoinMint.publicKey,
-          lamports: mintRent,
-          space: MINT_SIZE,
-          programId: TOKEN_PROGRAM_ID
-        })
+      // Create the transaction
+      const tx = new Transaction({
+        feePayer: this.wallet.publicKey,
+        recentBlockhash: blockhash
+      });
+
+      // Create the mint account
+      const createAccountIx = SystemProgram.createAccount({
+        fromPubkey: this.wallet.publicKey,
+        newAccountPubkey: stablecoinMint.publicKey,
+        lamports: mintRent,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID
+      });
+
+      // Initialize the mint
+      const initMintIx = createInitializeMintInstruction(
+        stablecoinMint.publicKey,
+        params.decimals,
+        this.wallet.publicKey,
+        this.wallet.publicKey,
+        TOKEN_PROGRAM_ID
       );
 
-      // Add the initialize mint instruction
-      tx.add(
-        createInitializeMintInstruction(
-          stablecoinMint.publicKey,
+      // Create stablecoin instruction
+      const createStablecoinIx = await this.program.methods
+        .createStablecoin(
+          params.name,
+          params.symbol,
           params.decimals,
-          this.wallet.publicKey,
-          this.wallet.publicKey,
-          TOKEN_PROGRAM_ID
+          params.iconUrl,
+          params.targetCurrency
         )
-      );
+        .accounts({
+          authority: this.wallet.publicKey,
+          stablecoinData: params.stablecoinData.publicKey,
+          stablecoinMint: stablecoinMint.publicKey,
+          bondMint: params.bondMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .instruction();
 
-      // Add the create stablecoin instruction
-      tx.add(
-        await this.program.methods
-          .createStablecoin(
-            params.name,
-            params.symbol,
-            params.decimals,
-            params.iconUrl,
-            params.targetCurrency
-          )
-          .accounts({
-            authority: this.wallet.publicKey,
-            stablecoinData: params.stablecoinData.publicKey,
-            stablecoinMint: stablecoinMint.publicKey,
-            bondMint: params.bondMint,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-            rent: SYSVAR_RENT_PUBKEY,
-          })
-          .instruction()
-      );
+      // Add all instructions to transaction
+      tx.add(createAccountIx);
+      tx.add(initMintIx);
+      tx.add(createStablecoinIx);
 
-      // Sign with the mint keypair
-      tx.partialSign(stablecoinMint);
+      try {
+        // Sign with the mint keypair first
+        tx.partialSign(stablecoinMint);
 
-      // Send and confirm transaction
-      const signature = await this.wallet.sendTransaction(tx, this.connection, {
-        signers: [stablecoinMint]
-      });
+        // Send transaction
+        const signature = await this.wallet.sendTransaction(tx, this.connection, {
+          signers: [stablecoinMint],
+          preflightCommitment: 'confirmed',
+          skipPreflight: false
+        });
 
-      // Wait for confirmation
-      await this.connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight: await this.connection.getBlockHeight()
-      });
+        // Wait for confirmation
+        const confirmation = await this.connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight
+        });
 
-      return signature;
+        if (confirmation.value.err) {
+          throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
+        }
+
+        return signature;
+
+      } catch (error: unknown) {
+        console.error('Transaction failed:', error);
+        if (error instanceof Error) {
+          throw new Error(`Failed to send transaction: ${error.message}`);
+        }
+        throw new Error(`Failed to send transaction: ${String(error)}`);
+      }
 
     } catch (error) {
       console.error('Error in createStablecoin:', error);

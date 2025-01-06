@@ -143,6 +143,10 @@ export const CreateStablecoin = () => {
     try {
       setLoading(true);
       
+      if (!publicKey || !connection) {
+        throw new Error('Wallet not connected');
+      }
+
       // Add validation
       if (!formData.name || !formData.symbol || !formData.bondMint) {
         throw new Error('Please fill in all required fields');
@@ -152,15 +156,21 @@ export const CreateStablecoin = () => {
       const stablecoinData = Keypair.generate();
       const stablecoinMint = Keypair.generate();
 
-      // Initialize StablecoinProgram with connection and wallet
+      // Initialize StablecoinProgram
       const program = new StablecoinProgram(connection, wallet);
+
+      console.log('Creating stablecoin with params:', {
+        name: formData.name,
+        symbol: formData.symbol,
+        bondMint: formData.bondMint
+      });
 
       // Create the stablecoin
       const signature = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
         decimals: 9,
-        iconUrl: formData.iconUrl,
+        iconUrl: formData.iconUrl || 'https://example.com/icon.png', // Provide default if empty
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
         stablecoinData,
@@ -170,9 +180,9 @@ export const CreateStablecoin = () => {
       console.log('Transaction signature:', signature);
       toast.success('Stablecoin created successfully!');
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error(getErrorMessage(error));
+      toast.error(error.message || 'Failed to create stablecoin');
     } finally {
       setLoading(false);
     }
