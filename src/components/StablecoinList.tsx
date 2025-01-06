@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { toast } from 'react-hot-toast';
-import { PublicKey, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getOracleFeed, getExchangeRate } from '../utils/oracle-feeds';
 import { getStablecoinAccounts } from '../utils/account-utils';
 
+// Define interfaces
 interface Stablecoin {
   mint: string;
   name: string;
@@ -22,9 +23,16 @@ type TokenAction = {
   type: 'mint' | 'redeem';
 };
 
+// Define the wallet context interface to match what StablecoinProgram expects
+interface WalletContextState {
+  publicKey: PublicKey | null;
+  sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
+}
+
 export const StablecoinList = () => {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction, wallet } = useWallet();
+  const wallet = useWallet();
+  const { publicKey, sendTransaction } = wallet;
   const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
   const [transacting, setTransacting] = useState<TokenAction | null>(null);
@@ -55,22 +63,13 @@ export const StablecoinList = () => {
   };
 
   const handleConfirmAction = async () => {
-    if (!transacting || !publicKey || !wallet?.adapter.sendTransaction || !connection) return;
+    if (!transacting || !publicKey || !wallet || !connection) return;
     
     try {
       const { stablecoin, type } = transacting;
       const stablecoinProgram = new StablecoinProgram(
         connection,
-        {
-          publicKey,
-          sendTransaction: async (transaction: Transaction) => {
-            const signature = await wallet.adapter.sendTransaction(
-              transaction,
-              connection
-            );
-            return signature;
-          }
-        }
+        wallet
       );
 
       const oracleFeed = getOracleFeed(stablecoin.currency);
@@ -84,7 +83,7 @@ export const StablecoinList = () => {
         stablecoinMint,
         new PublicKey(stablecoin.bondMint),
         oracleFeed,
-        (tx, conn) => wallet.adapter.sendTransaction(tx, conn)
+        wallet.sendTransaction.bind(wallet)
       );
 
       if (type === 'mint') {
@@ -108,6 +107,14 @@ export const StablecoinList = () => {
       toast.error(`Failed to ${transacting.type} tokens`);
     }
   };
+
+  if (!wallet || !publicKey || !connection) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        Please connect your wallet to continue.
+      </div>
+    );
+  }
 
   if (loading) {
     return <div>Loading...</div>;
