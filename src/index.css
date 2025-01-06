@@ -4,16 +4,23 @@
 
 @layer base {
   body {
-    @apply antialiased;
+    @apply antialiased bg-black;
   }
 }
 
 @layer components {
   .input-primary {
-    @apply w-full bg-gray-800/50 rounded-xl border border-gray-700 p-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none;
+    @apply w-full bg-[#1C1C1C] rounded-lg border border-[#2A2A2A] p-3 text-white 
+           focus:border-[#CDFE00] focus:ring-1 focus:ring-[#CDFE00] transition-all outline-none;
   }
   
   .btn-primary {
-    @apply bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-[#CDFE00] text-black font-medium py-2 px-4 rounded-lg 
+           hover:bg-[#b8e400] transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .card {
+    @apply bg-[#1C1C1C] rounded-lg border border-[#2A2A2A] p-6 
+           hover:border-[#3A3A3A] transition-all;
   }
 }
