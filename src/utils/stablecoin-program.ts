@@ -38,15 +38,14 @@ export class StablecoinProgram {
       const mintRent = await getMinimumBalanceForRentExemptMint(this.connection);
 
       // Get the latest blockhash
-      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
+      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
 
       // Create the transaction
-      const tx = new Transaction({
-        feePayer: this.wallet.publicKey,
-        recentBlockhash: blockhash
-      });
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = this.wallet.publicKey;
 
-      // Create the mint account
+      // Create the mint account instruction
       const createAccountIx = SystemProgram.createAccount({
         fromPubkey: this.wallet.publicKey,
         newAccountPubkey: stablecoinMint.publicKey,
@@ -55,12 +54,12 @@ export class StablecoinProgram {
         programId: TOKEN_PROGRAM_ID
       });
 
-      // Initialize the mint
+      // Initialize mint instruction
       const initMintIx = createInitializeMintInstruction(
-        stablecoinMint.publicKey,
-        params.decimals,
-        this.wallet.publicKey,
-        this.wallet.publicKey,
+        stablecoinMint.publicKey, // mint
+        params.decimals, // decimals
+        this.wallet.publicKey, // mint authority
+        this.wallet.publicKey, // freeze authority (you can use null)
         TOKEN_PROGRAM_ID
       );
 
@@ -77,35 +76,41 @@ export class StablecoinProgram {
           authority: this.wallet.publicKey,
           stablecoinData: params.stablecoinData.publicKey,
           stablecoinMint: stablecoinMint.publicKey,
-          bondMint: params.bondMint,
+          bondMint: new PublicKey(params.bondMint),
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
         .instruction();
 
-      // Add all instructions to transaction
+      // Add all instructions
       tx.add(createAccountIx);
       tx.add(initMintIx);
       tx.add(createStablecoinIx);
 
       try {
-        // Sign with the mint keypair first
+        // First simulate the transaction
+        const simulation = await this.connection.simulateTransaction(tx);
+        if (simulation.value.err) {
+          console.error('Simulation failed:', simulation.value.err);
+          throw new Error(`Transaction simulation failed: ${simulation.value.err}`);
+        }
+
+        // Sign with the mint keypair
         tx.partialSign(stablecoinMint);
 
-        // Send transaction
+        // Send the transaction
         const signature = await this.wallet.sendTransaction(tx, this.connection, {
-          signers: [stablecoinMint],
+          signers: [], // Remove stablecoinMint from here since we already signed with it
           preflightCommitment: 'confirmed',
-          skipPreflight: false
         });
 
         // Wait for confirmation
         const confirmation = await this.connection.confirmTransaction({
           signature,
           blockhash,
-          lastValidBlockHeight
-        });
+          lastValidBlockHeight: await this.connection.getBlockHeight(),
+        }, 'confirmed');
 
         if (confirmation.value.err) {
           throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
@@ -121,9 +126,12 @@ export class StablecoinProgram {
         throw new Error(`Failed to send transaction: ${String(error)}`);
       }
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error in createStablecoin:', error);
-      throw error;
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(String(error));
     }
   }
 

@@ -144,6 +144,7 @@ pub mod stablecoin_factory {
 }
 
 #[derive(Accounts)]
+#[instruction(name: String, symbol: String, decimals: u8, icon_url: String, target_currency: String)]
 pub struct CreateStablecoin<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -151,11 +152,18 @@ pub struct CreateStablecoin<'info> {
     #[account(
         init,
         payer = authority,
-        space = StablecoinData::SIZE
+        space = StablecoinData::SIZE,
+        seeds = [b"stablecoin", authority.key().as_ref(), name.as_bytes()],
+        bump
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
 
-    #[account(mut)]
+    #[account(
+        init,
+        payer = authority,
+        mint::decimals = decimals,
+        mint::authority = authority.key(),
+    )]
     pub stablecoin_mint: Account<'info, Mint>,
 
     pub bond_mint: Account<'info, Mint>,
