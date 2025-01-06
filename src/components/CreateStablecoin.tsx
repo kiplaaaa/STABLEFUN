@@ -184,61 +184,76 @@ export const CreateStablecoin = () => {
   };
 
   return (
-    <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-6 mb-8">
-      <h2 className="text-2xl font-bold mb-6">Create New Stablecoin</h2>
+    <div className="bg-[#1E1E1E] rounded-lg border border-[#2C2C2C] p-6">
+      <h2 className="text-2xl font-medium text-white mb-6">Create New Stablecoin</h2>
       
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Name</label>
+          <label className="block text-gray-300 text-sm mb-2">
+            Name
+          </label>
           <input
             type="text"
+            placeholder="My Stablecoin"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full bg-gray-700 rounded-lg border border-gray-600 p-2 text-white"
-            placeholder="My Stablecoin"
-            required
+            className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
+                     px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
+                     transition-colors placeholder-gray-600"
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-1">Symbol</label>
+          <label className="block text-gray-300 text-sm mb-2">
+            Symbol
+          </label>
           <input
             type="text"
+            placeholder="MYUSD"
             value={formData.symbol}
             onChange={(e) => setFormData({ ...formData, symbol: e.target.value })}
-            className="w-full bg-gray-700 rounded-lg border border-gray-600 p-2 text-white"
-            placeholder="MYUSD"
-            required
+            className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
+                     px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
+                     transition-colors placeholder-gray-600"
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-1">Target Currency</label>
+          <label className="block text-gray-300 text-sm mb-2">
+            Target Currency
+          </label>
           <select
             value={formData.currency}
             onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-            className="w-full bg-gray-700 rounded-lg border border-gray-600 p-2 text-white"
+            className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
+                     px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
+                     transition-colors appearance-none"
           >
             <option value="USD">USD</option>
             <option value="EUR">EUR</option>
-            <option value="MXN">MXN</option>
+            <option value="GBP">GBP</option>
+            <option value="JPY">JPY</option>
           </select>
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-1">Icon URL</label>
-          <div className="flex gap-2">
+          <label className="block text-gray-300 text-sm mb-2">
+            Icon URL
+          </label>
+          <div className="relative">
             <input
-              type="url"
+              type="text"
+              placeholder="https://example.com/icon"
               value={formData.icon}
               onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-              className="flex-1 bg-gray-700 rounded-lg border border-gray-600 p-2 text-white"
-              placeholder="https://example.com/icon"
+              className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
+                       px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
+                       transition-colors placeholder-gray-600 pr-10"
             />
-            <button
+            <button 
               type="button"
-              className="bg-gray-700 hover:bg-gray-600 rounded-lg p-2"
-              onClick={() => {/* TODO: Implement icon upload */}}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 
+                       hover:text-[#CDFE00] transition-colors"
             >
               <Upload className="w-5 h-5" />
             </button>
@@ -246,15 +261,15 @@ export const CreateStablecoin = () => {
         </div>
         
         <div>
-          <label htmlFor="bond" className="block text-sm font-medium text-gray-200">
+          <label className="block text-gray-300 text-sm mb-2">
             Bond
           </label>
           <select
-            id="bond"
             value={formData.bondMint}
             onChange={handleBondSelect}
-            className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-            required
+            className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
+                     px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
+                     transition-colors appearance-none"
           >
             <option value="">Select a bond</option>
             {availableBonds.map((bond) => (
@@ -280,10 +295,10 @@ export const CreateStablecoin = () => {
         
         <button
           type="submit"
-          disabled={!wallet.publicKey || loading}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-[#CDFE00] text-black font-medium py-2.5 px-4 rounded-md
+                   hover:bg-[#bae800] transition-colors mt-6"
         >
-          {loading ? 'Creating...' : 'Create Stablecoin'}
+          Create Stablecoin
         </button>
       </form>
     </div>

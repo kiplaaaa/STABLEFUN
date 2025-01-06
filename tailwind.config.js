@@ -7,14 +7,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#CDFE00',
-        background: '#111111',
-        card: '#1C1C1C',
-        border: '#2A2A2A',
-      },
-      container: {
-        center: true,
-        padding: '1.5rem',
+        'stablebond': {
+          black: '#141414',
+          'card-bg': '#1E1E1E',
+          border: '#2C2C2C',
+          accent: '#CDFE00',
+          'accent-hover': '#bae800',
+        }
       },
     },
   },
