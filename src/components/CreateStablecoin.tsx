@@ -160,38 +160,60 @@ export const CreateStablecoin = () => {
       
       const bondMintPubkey = new PublicKey(formData.bondMint);
       
-      // Get all token accounts owned by the user
-      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      // Get all token accounts for this mint
+      const tokenAccounts = await connection.getTokenAccountsByOwner(
         publicKey,
-        { programId: TOKEN_PROGRAM_ID }
+        {
+          mint: bondMintPubkey,
+        }
       );
 
-      // Find the specific token account for this bond
-      const bondAccount = tokenAccounts.value.find(
-        account => account.account.data.parsed.info.mint === formData.bondMint
-      );
+      console.log('Found token accounts:', tokenAccounts.value);
 
-      if (!bondAccount) {
+      // If no token accounts found, try to get the ATA
+      if (tokenAccounts.value.length === 0) {
+        const ata = await getAssociatedTokenAddress(
+          bondMintPubkey,
+          publicKey,
+          false,
+          TOKEN_PROGRAM_ID,
+          ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+
+        // Add the ATA to our token accounts if it exists
+        try {
+          const ataInfo = await connection.getAccountInfo(ata);
+          if (ataInfo) {
+            tokenAccounts.value = [{
+              pubkey: ata,
+              account: ataInfo
+            }];
+          }
+        } catch (error) {
+          console.error('Error checking ATA:', error);
+        }
+      }
+
+      if (tokenAccounts.value.length === 0) {
         toast.error('Bond token account not found');
         return;
       }
 
-      const balance = Number(bondAccount.account.data.parsed.info.tokenAmount.uiAmount);
-      if (balance <= 0) {
-        toast.error('Insufficient bond balance');
-        return;
-      }
-
-      console.log('Creating stablecoin with bond account:', {
-        bondMint: formData.bondMint,
-        bondAccount: bondAccount.pubkey.toString(),
-        balance: balance
-      });
+      // Use the first token account found (usually the ATA)
+      const userBondAccount = tokenAccounts.value[0].pubkey;
+      console.log('Using bond account:', userBondAccount.toString());
 
       const program = new StablecoinProgram(connection, wallet);
       
       const stablecoinMint = Keypair.generate();
       const stablecoinData = Keypair.generate();
+
+      console.log('Creating stablecoin with params:', {
+        bondMint: bondMintPubkey.toString(),
+        userBondAccount: userBondAccount.toString(),
+        stablecoinMint: stablecoinMint.publicKey.toString(),
+        stablecoinData: stablecoinData.publicKey.toString()
+      });
 
       const signature = await program.createStablecoin({
         name: formData.name,
@@ -202,7 +224,7 @@ export const CreateStablecoin = () => {
         bondMint: bondMintPubkey,
         stablecoinData,
         stablecoinMint,
-        userBondAccount: bondAccount.pubkey // Pass the actual token account pubkey
+        userBondAccount // Pass the actual token account pubkey
       });
 
       toast.success('Stablecoin created successfully!');

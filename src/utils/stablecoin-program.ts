@@ -54,10 +54,14 @@ export class StablecoinProgram {
         PROGRAM_ID
       );
 
+      // Log all accounts being used
       console.log('Creating stablecoin with accounts:', {
+        authority: this.wallet.publicKey.toString(),
+        stablecoinData: params.stablecoinData.publicKey.toString(),
+        stablecoinMint: params.stablecoinMint.publicKey.toString(),
+        bondMint: params.bondMint.toString(),
         userBondAccount: params.userBondAccount.toString(),
-        programBondAccount: programBondAccount.toString(),
-        bondMint: params.bondMint.toString()
+        programBondAccount: programBondAccount.toString()
       });
 
       const tx = await this.program.methods
@@ -74,7 +78,7 @@ export class StablecoinProgram {
           stablecoinMint: params.stablecoinMint.publicKey,
           bondMint: params.bondMint,
           userBondAccount: params.userBondAccount,
-          programBondAccount: programBondAccount,
+          programBondAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
