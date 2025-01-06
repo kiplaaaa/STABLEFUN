@@ -3,10 +3,17 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use switchboard_solana::AggregatorAccountData;
+use std::str::FromStr;
 
 declare_id!("A6ZS2FHTzLuB6vP1XwDbb9TEtFdGZwT86dEJcGXmQPeU");
 
-const MINT_SIZE: usize = 82;
+// Constants
+const MAX_NAME_LENGTH: usize = 32;
+const MAX_SYMBOL_LENGTH: usize = 8;
+const MAX_ICON_URL_LENGTH: usize = 128;
+const MAX_TARGET_CURRENCY_LENGTH: usize = 16;
+const EXPECTED_BOND_MINT: &str = "YOUR_BOND_MINT_ADDRESS";
+const EXPECTED_ORACLE_FEED: &str = "YOUR_ORACLE_FEED_ADDRESS";
 
 #[program]
 pub mod stablecoin_factory {
@@ -21,12 +28,17 @@ pub mod stablecoin_factory {
         target_currency: String,
     ) -> Result<()> {
         msg!("Creating stablecoin with name: {}", name);
-        
+
         // Add validation
         require!(decimals <= 9, ErrorCode::InvalidDecimals);
-        require!(!name.is_empty(), ErrorCode::InvalidName);
-        require!(!symbol.is_empty(), ErrorCode::InvalidSymbol);
-        require!(!target_currency.is_empty(), ErrorCode::InvalidCurrency);
+        require!(!name.is_empty() && name.len() <= MAX_NAME_LENGTH, ErrorCode::InvalidName);
+        require!(!symbol.is_empty() && symbol.len() <= MAX_SYMBOL_LENGTH, ErrorCode::InvalidSymbol);
+        require!(!icon_url.is_empty() && icon_url.len() <= MAX_ICON_URL_LENGTH, ErrorCode::InvalidIconUrl);
+        require!(!target_currency.is_empty() && target_currency.len() <= MAX_TARGET_CURRENCY_LENGTH, ErrorCode::InvalidCurrency);
+        require!(
+            ctx.accounts.bond_mint.key() == Pubkey::from_str(EXPECTED_BOND_MINT).unwrap(),
+            ErrorCode::InvalidBondMint
+        );
 
         // Initialize the stablecoin data account
         let stablecoin_data = &mut ctx.accounts.stablecoin_data;
@@ -47,16 +59,14 @@ pub mod stablecoin_factory {
         ctx: Context<MintTokens>,
         amount: u64,
     ) -> Result<()> {
-        // Get exchange rate from oracle
         let feed = &ctx.accounts.oracle_feed.load()?;
         let result = feed.latest_confirmed_round.result;
-        // Calculate price from mantissa and scale
+        require!(result.scale >= 0, ErrorCode::InvalidOracleData);
+        
         let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
+        require!(exchange_rate > 0.0, ErrorCode::InvalidExchangeRate);
 
-        // Calculate token amount based on bond amount and exchange rate
         let token_amount = (amount as f64 * exchange_rate) as u64;
-
-        // Transfer bonds from user
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -69,7 +79,6 @@ pub mod stablecoin_factory {
             amount,
         )?;
 
-        // Mint stablecoins to user
         token::mint_to(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -82,7 +91,6 @@ pub mod stablecoin_factory {
             token_amount,
         )?;
 
-        // Update total supply
         let stablecoin = &mut ctx.accounts.stablecoin_data;
         stablecoin.total_supply = stablecoin.total_supply.checked_add(token_amount)
             .ok_or(ErrorCode::CalculationOverflow)?;
@@ -94,16 +102,14 @@ pub mod stablecoin_factory {
         ctx: Context<RedeemTokens>,
         amount: u64,
     ) -> Result<()> {
-        // Get exchange rate from oracle
         let feed = &ctx.accounts.oracle_feed.load()?;
         let result = feed.latest_confirmed_round.result;
-        // Calculate price from mantissa and scale
+        require!(result.scale >= 0, ErrorCode::InvalidOracleData);
+
         let exchange_rate = (result.mantissa as f64) * 10f64.powi(result.scale as i32);
+        require!(exchange_rate > 0.0, ErrorCode::InvalidExchangeRate);
 
-        // Calculate bond amount based on token amount and exchange rate
         let bond_amount = (amount as f64 / exchange_rate) as u64;
-
-        // Burn stablecoins from user
         token::burn(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -116,7 +122,6 @@ pub mod stablecoin_factory {
             amount,
         )?;
 
-        // Transfer bonds back to user
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -129,7 +134,6 @@ pub mod stablecoin_factory {
             bond_amount,
         )?;
 
-        // Update total supply
         let stablecoin = &mut ctx.accounts.stablecoin_data;
         stablecoin.total_supply = stablecoin.total_supply.checked_sub(amount)
             .ok_or(ErrorCode::CalculationOverflow)?;
@@ -143,7 +147,7 @@ pub mod stablecoin_factory {
 pub struct CreateStablecoin<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     #[account(
         init,
         payer = authority,
@@ -152,18 +156,18 @@ pub struct CreateStablecoin<'info> {
         bump
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
-    
+
     #[account(
         init,
         payer = authority,
         mint::decimals = decimals,
-        mint::authority = authority,
-        mint::freeze_authority = authority
+        mint::authority = authority.key(),
+        mint::freeze_authority = authority.key()
     )]
     pub stablecoin_mint: Account<'info, Mint>,
-    
+
     pub bond_mint: Account<'info, Mint>,
-    
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
@@ -173,25 +177,27 @@ pub struct CreateStablecoin<'info> {
 pub struct MintTokens<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     #[account(mut)]
     pub stablecoin_data: Account<'info, StablecoinData>,
-    
+
     #[account(mut)]
     pub stablecoin_mint: Account<'info, Mint>,
-    
+
     #[account(mut)]
     pub user_bond_account: Account<'info, TokenAccount>,
-    
+
     #[account(mut)]
     pub program_bond_account: Account<'info, TokenAccount>,
-    
+
     #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
-    
-    /// CHECK: Oracle feed account
+
+    #[account(
+        constraint = oracle_feed.key() == Pubkey::from_str(EXPECTED_ORACLE_FEED).unwrap()
+    )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
-    
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -199,35 +205,36 @@ pub struct MintTokens<'info> {
 pub struct RedeemTokens<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    
+
     #[account(mut)]
     pub stablecoin_data: Account<'info, StablecoinData>,
-    
+
     #[account(mut)]
     pub stablecoin_mint: Account<'info, Mint>,
-    
+
     #[account(mut)]
     pub user_bond_account: Account<'info, TokenAccount>,
-    
+
     #[account(mut)]
     pub program_bond_account: Account<'info, TokenAccount>,
-    
+
     #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
-    
-    /// CHECK: Oracle feed account
+
+    #[account(
+        constraint = oracle_feed.key() == Pubkey::from_str(EXPECTED_ORACLE_FEED).unwrap()
+    )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
-    
+
     pub token_program: Program<'info, Token>,
 }
 
 #[account]
 pub struct StablecoinData {
-    pub authority: Pubkey,      // Move fixed-size fields to the top
+    pub authority: Pubkey,
     pub bond_mint: Pubkey,
     pub total_supply: u64,
     pub decimals: u8,
-    // String fields last
     pub name: String,
     pub symbol: String,
     pub icon_url: String,
@@ -235,15 +242,15 @@ pub struct StablecoinData {
 }
 
 impl StablecoinData {
-    pub const SIZE: usize = 8 +  // discriminator
-                           32 + // authority
-                           32 + // bond_mint
-                           8 +  // total_supply
-                           1 +  // decimals
-                           4 + 32 + // name
-                           4 + 8 +  // symbol
-                           4 + 128 + // icon_url (increased size)
-                           4 + 8;   // target_currency
+    pub const SIZE: usize = 8 +
+                           32 +
+                           32 +
+                           8 +
+                           1 +
+                           4 + MAX_NAME_LENGTH +
+                           4 + MAX_SYMBOL_LENGTH +
+                           4 + MAX_ICON_URL_LENGTH +
+                           4 + MAX_TARGET_CURRENCY_LENGTH;
 }
 
 #[error_code]
@@ -258,6 +265,12 @@ pub enum ErrorCode {
     InvalidName,
     #[msg("Invalid symbol provided")]
     InvalidSymbol,
+    #[msg("Invalid icon URL")]
+    InvalidIconUrl,
     #[msg("Invalid currency provided")]
     InvalidCurrency,
+    #[msg("Invalid oracle data")]
+    InvalidOracleData,
+    #[msg("Invalid exchange rate")]
+    InvalidExchangeRate,
 }
