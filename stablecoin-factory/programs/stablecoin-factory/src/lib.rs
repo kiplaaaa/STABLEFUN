@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use switchboard_solana::AggregatorAccountData;
 
-declare_id!("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
+declare_id!("A6ZS2FHTzLuB6vP1XwDbb9TEtFdGZwT86dEJcGXmQPeU");
 
 const MINT_SIZE: usize = 82;
 
@@ -148,16 +148,18 @@ pub struct CreateStablecoin<'info> {
         init,
         payer = authority,
         space = StablecoinData::SIZE,
-        seeds = [
-            b"stablecoin",
-            authority.key().as_ref(),
-            name.as_bytes()
-        ],
+        seeds = [b"stablecoin", authority.key().as_ref(), name.as_bytes()],
         bump
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
     
-    #[account(mut)]
+    #[account(
+        init,
+        payer = authority,
+        mint::decimals = decimals,
+        mint::authority = authority,
+        mint::freeze_authority = authority
+    )]
     pub stablecoin_mint: Account<'info, Mint>,
     
     pub bond_mint: Account<'info, Mint>,

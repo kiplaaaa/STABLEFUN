@@ -43,8 +43,8 @@ export class StablecoinProgram {
     }
 
     try {
-      // Create transaction
-      const tx = await this.program.methods
+      // Create the create stablecoin instruction
+      const createStablecoinIx = await this.program.methods
         .createStablecoin(
           params.name,
           params.symbol,
@@ -61,11 +61,18 @@ export class StablecoinProgram {
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .signers([params.stablecoinData, params.stablecoinMint])
-        .rpc();
+        .instruction();
 
-      await this.connection.confirmTransaction(tx);
-      return tx;
+      // Create and send transaction
+      const transaction = new Transaction().add(createStablecoinIx);
+      
+      const signature = await this.wallet.sendTransaction(transaction, this.connection, {
+        signers: [params.stablecoinData, params.stablecoinMint]
+      });
+      
+      await this.connection.confirmTransaction(signature);
+      return signature;
+
     } catch (error) {
       console.error('Error in createStablecoin:', error);
       throw error;
