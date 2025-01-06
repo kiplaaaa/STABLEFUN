@@ -10,7 +10,6 @@ import {
 } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
-import { WalletContextState } from '@solana/wallet-adapter-react';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 

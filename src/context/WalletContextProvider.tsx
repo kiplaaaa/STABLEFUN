@@ -4,13 +4,11 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { toast } from 'react-hot-toast';
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { getErrorMessage } from '../utils/errors';
 import { ConnectionConfig } from '@solana/web3.js';
 import { RPC_ENDPOINT } from '../utils/constants';
 
 export const WalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
-  const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => RPC_ENDPOINT, []);
   
   const connectionConfig = {
