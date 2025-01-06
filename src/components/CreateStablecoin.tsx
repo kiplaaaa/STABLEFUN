@@ -136,47 +136,49 @@ export const CreateStablecoin = () => {
   }, [formData.bondMint, publicKey, connection]);
 
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!wallet.publicKey || !connection) return;
+    
+    if (!connection || !publicKey || !wallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
 
+    if (!formData.bondMint) {
+      toast.error('Please select a bond');
+      return;
+    }
+
+    setLoading(true);
     try {
-      setLoading(true);
-      console.log('Creating stablecoin with params:', formData); // Debug log
-
-      // Create keypairs for the new accounts
+      const stablecoinProgram = new StablecoinProgram(connection, wallet);
       const stablecoinMint = Keypair.generate();
       const stablecoinData = Keypair.generate();
 
-      const program = new StablecoinProgram(connection, wallet);
-
-      // Log the parameters being passed
-      console.log('Program parameters:', {
+      const tx = await stablecoinProgram.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
-        decimals: 6, // Using fixed decimals for now
-        iconUrl: formData.icon || 'https://example.com/icon.png',
+        decimals: 6, // You can make this configurable if needed
+        iconUrl: formData.icon,
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
-        stablecoinData: stablecoinData,
-        stablecoinMint: stablecoinMint,
+        stablecoinData,
+        stablecoinMint,
       });
 
-      const signature = await program.createStablecoin({
-        name: formData.name,
-        symbol: formData.symbol,
-        decimals: 6, // Using fixed decimals for now
-        iconUrl: formData.icon || 'https://example.com/icon.png',
-        targetCurrency: formData.currency,
-        bondMint: new PublicKey(formData.bondMint),
-        stablecoinData: stablecoinData,
-        stablecoinMint: stablecoinMint,
-      });
-
-      console.log('Transaction signature:', signature);
       toast.success('Stablecoin created successfully!');
+      
+      // Reset form after successful creation
+      setFormData({
+        name: '',
+        symbol: '',
+        currency: 'USD',
+        icon: '',
+        bondMint: ''
+      });
+      
     } catch (error) {
-      console.error('Detailed error:', error);
+      console.error('Error creating stablecoin:', error);
       toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
@@ -187,7 +189,7 @@ export const CreateStablecoin = () => {
     <div className="bg-[#1E1E1E] rounded-lg border border-[#2C2C2C] p-6">
       <h2 className="text-2xl font-medium text-white mb-6">Create New Stablecoin</h2>
       
-      <form className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-gray-300 text-sm mb-2">
             Name
@@ -295,10 +297,18 @@ export const CreateStablecoin = () => {
         
         <button
           type="submit"
+          disabled={loading || !publicKey}
           className="w-full bg-[#CDFE00] text-black font-medium py-2.5 px-4 rounded-md
-                   hover:bg-[#bae800] transition-colors mt-6"
+                   hover:bg-[#bae800] transition-colors mt-6 disabled:opacity-50 
+                   disabled:cursor-not-allowed"
         >
-          Create Stablecoin
+          {loading ? (
+            <span>Creating...</span>
+          ) : !publicKey ? (
+            <span>Connect Wallet to Create</span>
+          ) : (
+            <span>Create Stablecoin</span>
+          )}
         </button>
       </form>
     </div>

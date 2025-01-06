@@ -43,43 +43,8 @@ export class StablecoinProgram {
     }
 
     try {
-      console.log('Creating stablecoin with program:', this.program.programId.toString());
-
-      // Derive the PDA for stablecoin data
-      const [stablecoinDataPDA] = await PublicKey.findProgramAddress(
-        [
-          Buffer.from('stablecoin'),
-          this.wallet.publicKey.toBuffer(),
-          Buffer.from(params.name)
-        ],
-        this.program.programId
-      );
-
-      // Get minimum lamports for rent exemption
-      const mintRent = await getMinimumBalanceForRentExemptMint(this.connection);
-
       // Create transaction
-      const tx = new Transaction();
-      
-      // Add create mint account instruction
-      tx.add(
-        SystemProgram.createAccount({
-          fromPubkey: this.wallet.publicKey,
-          newAccountPubkey: params.stablecoinMint.publicKey,
-          space: MINT_SIZE,
-          lamports: mintRent,
-          programId: TOKEN_PROGRAM_ID,
-        }),
-        createInitializeMintInstruction(
-          params.stablecoinMint.publicKey,
-          params.decimals,
-          this.wallet.publicKey,
-          this.wallet.publicKey,
-        )
-      );
-
-      // Add create stablecoin instruction
-      const createStablecoinIx = await this.program.methods
+      const tx = await this.program.methods
         .createStablecoin(
           params.name,
           params.symbol,
@@ -89,34 +54,18 @@ export class StablecoinProgram {
         )
         .accounts({
           authority: this.wallet.publicKey,
-          stablecoinData: stablecoinDataPDA,
+          stablecoinData: params.stablecoinData.publicKey,
           stablecoinMint: params.stablecoinMint.publicKey,
           bondMint: params.bondMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .instruction();
+        .signers([params.stablecoinData, params.stablecoinMint])
+        .rpc();
 
-      tx.add(createStablecoinIx);
-
-      // Set recent blockhash and fee payer
-      tx.recentBlockhash = (await this.connection.getLatestBlockhash('confirmed')).blockhash;
-      tx.feePayer = this.wallet.publicKey;
-
-      // Add signers
-      tx.sign(params.stablecoinMint);
-
-      console.log('Sending transaction...');
-      const signature = await this.wallet.sendTransaction(tx, this.connection, {
-        signers: [params.stablecoinMint],
-        preflightCommitment: 'confirmed',
-      });
-
-      console.log('Confirming transaction...');
-      await this.connection.confirmTransaction(signature, 'confirmed');
-
-      return signature;
+      await this.connection.confirmTransaction(tx);
+      return tx;
     } catch (error) {
       console.error('Error in createStablecoin:', error);
       throw error;
