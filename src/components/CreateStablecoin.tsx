@@ -139,52 +139,33 @@ export const CreateStablecoin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (!publicKey || !connection) return;
+
+    setLoading(true);
     try {
-      setLoading(true);
-      
-      if (!publicKey || !connection) {
-        throw new Error('Wallet not connected');
-      }
+        const program = new StablecoinProgram(connection, wallet);
+        
+        // Generate keypair for the mint
+        const stablecoinMint = Keypair.generate();
+        
+        const signature = await program.createStablecoin({
+            name: formData.name,
+            symbol: formData.symbol,
+            decimals: 9,
+            iconUrl: formData.iconUrl || 'https://example.com/icon.png',
+            targetCurrency: formData.currency,
+            bondMint: new PublicKey(formData.bondMint),
+            stablecoinData: Keypair.generate(),
+            stablecoinMint: stablecoinMint
+        });
 
-      // Add validation
-      if (!formData.name || !formData.symbol || !formData.bondMint) {
-        throw new Error('Please fill in all required fields');
-      }
-
-      // Create keypairs first
-      const stablecoinData = Keypair.generate();
-      const stablecoinMint = Keypair.generate();
-
-      // Initialize StablecoinProgram
-      const program = new StablecoinProgram(connection, wallet);
-
-      console.log('Creating stablecoin with params:', {
-        name: formData.name,
-        symbol: formData.symbol,
-        bondMint: formData.bondMint
-      });
-
-      // Create the stablecoin
-      const signature = await program.createStablecoin({
-        name: formData.name,
-        symbol: formData.symbol,
-        decimals: 9,
-        iconUrl: formData.iconUrl || 'https://example.com/icon.png', // Provide default if empty
-        targetCurrency: formData.currency,
-        bondMint: new PublicKey(formData.bondMint),
-        stablecoinData,
-        stablecoinMint,
-      });
-
-      console.log('Transaction signature:', signature);
-      toast.success('Stablecoin created successfully!');
-      
-    } catch (error: any) {
-      console.error('Error:', error);
-      toast.error(error.message || 'Failed to create stablecoin');
+        toast.success('Stablecoin created successfully!');
+        console.log('Transaction signature:', signature);
+    } catch (error) {
+        console.error('Error:', error);
+        toast.error(getErrorMessage(error));
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 

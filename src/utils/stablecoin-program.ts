@@ -31,40 +31,11 @@ export class StablecoinProgram {
     }
 
     try {
-      // Generate a new keypair for the mint
-      const stablecoinMint = Keypair.generate();
+      // Generate keypair for stablecoin data account
+      const stablecoinData = Keypair.generate();
       
-      // Calculate the minimum rent for the mint account
-      const mintRent = await getMinimumBalanceForRentExemptMint(this.connection);
-
-      // Get the latest blockhash
-      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
-
       // Create the transaction
-      const tx = new Transaction();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = this.wallet.publicKey;
-
-      // Create the mint account instruction
-      const createAccountIx = SystemProgram.createAccount({
-        fromPubkey: this.wallet.publicKey,
-        newAccountPubkey: stablecoinMint.publicKey,
-        lamports: mintRent,
-        space: MINT_SIZE,
-        programId: TOKEN_PROGRAM_ID
-      });
-
-      // Initialize mint instruction
-      const initMintIx = createInitializeMintInstruction(
-        stablecoinMint.publicKey, // mint
-        params.decimals, // decimals
-        this.wallet.publicKey, // mint authority
-        this.wallet.publicKey, // freeze authority (you can use null)
-        TOKEN_PROGRAM_ID
-      );
-
-      // Create stablecoin instruction
-      const createStablecoinIx = await this.program.methods
+      const tx = await this.program.methods
         .createStablecoin(
           params.name,
           params.symbol,
@@ -74,64 +45,20 @@ export class StablecoinProgram {
         )
         .accounts({
           authority: this.wallet.publicKey,
-          stablecoinData: params.stablecoinData.publicKey,
-          stablecoinMint: stablecoinMint.publicKey,
-          bondMint: new PublicKey(params.bondMint),
+          stablecoinData: stablecoinData.publicKey,
+          stablecoinMint: params.stablecoinMint.publicKey,
+          bondMint: params.bondMint,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .instruction();
+        .signers([stablecoinData, params.stablecoinMint])
+        .rpc();
 
-      // Add all instructions
-      tx.add(createAccountIx);
-      tx.add(initMintIx);
-      tx.add(createStablecoinIx);
-
-      try {
-        // First simulate the transaction
-        const simulation = await this.connection.simulateTransaction(tx);
-        if (simulation.value.err) {
-          console.error('Simulation failed:', simulation.value.err);
-          throw new Error(`Transaction simulation failed: ${simulation.value.err}`);
-        }
-
-        // Sign with the mint keypair
-        tx.partialSign(stablecoinMint);
-
-        // Send the transaction
-        const signature = await this.wallet.sendTransaction(tx, this.connection, {
-          signers: [], // Remove stablecoinMint from here since we already signed with it
-          preflightCommitment: 'confirmed',
-        });
-
-        // Wait for confirmation
-        const confirmation = await this.connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight: await this.connection.getBlockHeight(),
-        }, 'confirmed');
-
-        if (confirmation.value.err) {
-          throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
-        }
-
-        return signature;
-
-      } catch (error: unknown) {
-        console.error('Transaction failed:', error);
-        if (error instanceof Error) {
-          throw new Error(`Failed to send transaction: ${error.message}`);
-        }
-        throw new Error(`Failed to send transaction: ${String(error)}`);
-      }
-
-    } catch (error: unknown) {
-      console.error('Error in createStablecoin:', error);
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(String(error));
+      return tx;
+    } catch (error) {
+      console.error('Error creating stablecoin:', error);
+      throw error;
     }
   }
 

@@ -12,7 +12,21 @@ const MAX_NAME_LENGTH: usize = 32;
 const MAX_SYMBOL_LENGTH: usize = 8;
 const MAX_ICON_URL_LENGTH: usize = 128;
 const MAX_TARGET_CURRENCY_LENGTH: usize = 16;
-const EXPECTED_ORACLE_FEED: &str = "YOUR_ORACLE_FEED_ADDRESS";
+const ORACLE_FEEDS: &[(&str, &str)] = &[
+    ("USD", "Frkcq8bWREur6hRrtGZidPDn1P3Byi8fjbJxfiJvRWFB"),
+    ("EUR", "7Eg6PFHteYGPr4PwpcDVibFtAihuzyB5BgqYK4DB8u3Q"),
+    ("MXN", "Frkcq8bWREur6hRrtGZidPDn1P3Byi8fjbJxfiJvRWFB"),
+];
+
+// Move the helper function outside the program module
+pub fn get_oracle_feed(currency: &str) -> Result<Pubkey> {
+    for &(curr, feed) in ORACLE_FEEDS {
+        if curr == currency {
+            return Ok(Pubkey::from_str(feed).unwrap());
+        }
+    }
+    Err(error!(ErrorCode::InvalidCurrency))
+}
 
 #[program]
 pub mod stablecoin_factory {
@@ -29,6 +43,9 @@ pub mod stablecoin_factory {
         msg!("Creating stablecoin with params:");
         msg!("Name: {}", name);
         msg!("Symbol: {}", symbol);
+        msg!("Decimals: {}", decimals);
+        msg!("Icon URL: {}", icon_url);
+        msg!("Target Currency: {}", target_currency);
         msg!("Bond mint: {}", ctx.accounts.bond_mint.key());
         
         msg!("Creating stablecoin with name: {}", name);
@@ -59,6 +76,7 @@ pub mod stablecoin_factory {
     pub fn mint_tokens(
         ctx: Context<MintTokens>,
         amount: u64,
+        minimum_tokens_out: u64,
     ) -> Result<()> {
         let feed = &ctx.accounts.oracle_feed.load()?;
         let result = feed.latest_confirmed_round.result;
@@ -68,6 +86,8 @@ pub mod stablecoin_factory {
         require!(exchange_rate > 0.0, ErrorCode::InvalidExchangeRate);
 
         let token_amount = (amount as f64 * exchange_rate) as u64;
+        require!(token_amount >= minimum_tokens_out, ErrorCode::SlippageExceeded);
+
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
@@ -144,7 +164,13 @@ pub mod stablecoin_factory {
 }
 
 #[derive(Accounts)]
-#[instruction(name: String, symbol: String, decimals: u8, icon_url: String, target_currency: String)]
+#[instruction(
+    name: String,
+    symbol: String,
+    decimals: u8,
+    icon_url: String,
+    target_currency: String
+)]
 pub struct CreateStablecoin<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -152,9 +178,7 @@ pub struct CreateStablecoin<'info> {
     #[account(
         init,
         payer = authority,
-        space = StablecoinData::SIZE,
-        seeds = [b"stablecoin", authority.key().as_ref(), name.as_bytes()],
-        bump
+        space = StablecoinData::SIZE
     )]
     pub stablecoin_data: Account<'info, StablecoinData>,
 
@@ -184,17 +208,28 @@ pub struct MintTokens<'info> {
     #[account(mut)]
     pub stablecoin_mint: Account<'info, Mint>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = user_token_account.owner == authority.key(),
+        constraint = user_token_account.mint == stablecoin_mint.key()
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = user_bond_account.owner == authority.key(),
+        constraint = user_bond_account.mint == stablecoin_data.bond_mint
+    )]
     pub user_bond_account: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub program_bond_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
-
     #[account(
-        constraint = oracle_feed.key() == Pubkey::from_str(EXPECTED_ORACLE_FEED).unwrap()
+        constraint = {
+            let expected_feed = get_oracle_feed(&stablecoin_data.target_currency)?;
+            oracle_feed.key() == expected_feed
+        }
     )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
 
@@ -222,7 +257,10 @@ pub struct RedeemTokens<'info> {
     pub user_token_account: Account<'info, TokenAccount>,
 
     #[account(
-        constraint = oracle_feed.key() == Pubkey::from_str(EXPECTED_ORACLE_FEED).unwrap()
+        constraint = {
+            let expected_feed = get_oracle_feed(&stablecoin_data.target_currency)?;
+            oracle_feed.key() == expected_feed
+        }
     )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
 
@@ -273,4 +311,6 @@ pub enum ErrorCode {
     InvalidOracleData,
     #[msg("Invalid exchange rate")]
     InvalidExchangeRate,
+    #[msg("Slippage exceeded")]
+    SlippageExceeded,
 }
