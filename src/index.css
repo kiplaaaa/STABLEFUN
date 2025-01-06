@@ -4,11 +4,15 @@
 
 @layer base {
   body {
-    @apply antialiased bg-black;
+    @apply bg-[#111111] text-white antialiased;
   }
 }
 
 @layer components {
+  .nav-link {
+    @apply text-gray-400 hover:text-white transition-colors;
+  }
+  
   .input-primary {
     @apply w-full bg-[#1C1C1C] rounded-lg border border-[#2A2A2A] p-3 text-white 
            focus:border-[#CDFE00] focus:ring-1 focus:ring-[#CDFE00] transition-all outline-none;
