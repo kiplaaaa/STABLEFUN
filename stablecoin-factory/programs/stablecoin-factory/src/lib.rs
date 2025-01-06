@@ -190,8 +190,12 @@ pub struct CreateStablecoin<'info> {
     )]
     pub stablecoin_mint: Account<'info, Mint>,
 
+    #[account(
+        constraint = bond_mint.mint_authority.is_some(),
+        owner = token::ID
+    )]
     pub bond_mint: Account<'info, Mint>,
-    
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,

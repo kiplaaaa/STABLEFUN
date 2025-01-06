@@ -11,6 +11,7 @@ import {
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
 import { WalletContextState } from '@solana/wallet-adapter-react';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 
 interface Bond {
@@ -141,15 +142,21 @@ export const CreateStablecoin = () => {
     e.preventDefault();
     if (!publicKey || !connection) return;
 
-    setLoading(true);
     try {
+        // Verify the bond mint account
+        const bondMintInfo = await connection.getAccountInfo(new PublicKey(formData.bondMint));
+        if (!bondMintInfo || bondMintInfo.owner.toString() !== TOKEN_PROGRAM_ID.toString()) {
+            toast.error('Invalid bond mint account');
+            return;
+        }
+
+        setLoading(true);
         const program = new StablecoinProgram(connection, wallet);
         
-        // Generate new keypairs for both the mint and data accounts
+        // Generate new keypairs for both accounts
         const stablecoinMint = Keypair.generate();
         const stablecoinData = Keypair.generate();
         
-        // Create the stablecoin with both new keypairs
         const signature = await program.createStablecoin({
             name: formData.name,
             symbol: formData.symbol,
@@ -157,8 +164,8 @@ export const CreateStablecoin = () => {
             iconUrl: formData.iconUrl || 'https://example.com/icon.png',
             targetCurrency: formData.currency,
             bondMint: new PublicKey(formData.bondMint),
-            stablecoinData: stablecoinData,  // Pass the new data account keypair
-            stablecoinMint: stablecoinMint
+            stablecoinData,  // Pass the entire keypair
+            stablecoinMint   // Pass the entire keypair
         });
 
         toast.success('Stablecoin created successfully!');

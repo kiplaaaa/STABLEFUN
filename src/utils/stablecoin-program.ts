@@ -72,18 +72,24 @@ export class StablecoinProgram {
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
         })
-        .signers([params.stablecoinData, params.stablecoinMint])
+        .signers([
+          params.stablecoinData,
+          params.stablecoinMint
+        ])
         .transaction();
 
       // Set the fresh blockhash
       tx.recentBlockhash = latestBlockhash.blockhash;
       tx.feePayer = this.wallet.publicKey;
 
-      // Send and confirm transaction with retry logic
+      // Sign with the wallet (authority)
       const signedTx = await this.wallet.signTransaction(tx);
-      if (!signedTx) {
-        throw new Error('Failed to sign transaction');
-      }
+      
+      // Partially sign with the other required signers
+      signedTx.partialSign(params.stablecoinData);
+      signedTx.partialSign(params.stablecoinMint);
+
+      // Send and confirm transaction
       const signature = await this.connection.sendRawTransaction(signedTx.serialize(), {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
