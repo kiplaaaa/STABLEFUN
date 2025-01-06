@@ -10,6 +10,7 @@ import {
 } from '@solana/web3.js';
 import { StablecoinProgram } from '../utils/stablecoin-program';
 import { getErrorMessage } from '../utils/errors';
+import { WalletContextState } from '@solana/wallet-adapter-react';
 
 
 interface Bond {
@@ -28,7 +29,7 @@ export const CreateStablecoin = () => {
     name: '',
     symbol: '',
     currency: 'USD',
-    icon: '',
+    iconUrl: '',
     bondMint: ''
   });
   const [bondBalance, setBondBalance] = useState<number | null>(null);
@@ -139,7 +140,10 @@ export const CreateStablecoin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!publicKey || !connection || loading) return;
+    if (!publicKey || !connection || loading) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -149,14 +153,17 @@ export const CreateStablecoin = () => {
       const stablecoinMint = Keypair.generate();
 
       // Initialize StablecoinProgram
-      const program = new StablecoinProgram(connection, wallet);
+      const program = new StablecoinProgram(
+        connection,
+        wallet as WalletContextState
+      );
 
       // Create the stablecoin
       const signature = await program.createStablecoin({
         name: formData.name,
         symbol: formData.symbol,
-        decimals: 9, // or whatever default you want
-        iconUrl: formData.icon,
+        decimals: 9,
+        iconUrl: formData.iconUrl,
         targetCurrency: formData.currency,
         bondMint: new PublicKey(formData.bondMint),
         stablecoinData,
@@ -164,7 +171,16 @@ export const CreateStablecoin = () => {
       });
 
       toast.success('Stablecoin created successfully!');
-      // Reset form or redirect user
+      console.log('Transaction signature:', signature);
+      
+      // Reset form
+      setFormData({
+        name: '',
+        symbol: '',
+        currency: 'USD',
+        iconUrl: '',
+        bondMint: '',
+      });
       
     } catch (error) {
       console.error('Error creating stablecoin:', error);
@@ -235,8 +251,8 @@ export const CreateStablecoin = () => {
             <input
               type="text"
               placeholder="https://example.com/icon"
-              value={formData.icon}
-              onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+              value={formData.iconUrl}
+              onChange={(e) => setFormData({ ...formData, iconUrl: e.target.value })}
               className="w-full bg-[#141414] text-white rounded-md border border-[#2C2C2C] 
                        px-4 py-2.5 focus:outline-none focus:border-[#CDFE00] 
                        transition-colors placeholder-gray-600 pr-10"

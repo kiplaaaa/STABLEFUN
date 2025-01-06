@@ -20,22 +20,11 @@ interface CreateStablecoinParams {
 
 
 export class StablecoinProgram {
-  program: Program;
-  connection: Connection;
-  wallet: WalletContextState;
-
-  constructor(connection: Connection, wallet: WalletContextState) {
-    this.connection = connection;
-    this.wallet = wallet;
-
-    const provider = new AnchorProvider(
-      connection,
-      wallet as any,
-      { commitment: 'confirmed', preflightCommitment: 'confirmed' }
-    );
-
-    this.program = new Program(IDL, PROGRAM_ID, provider);
-  }
+  constructor(
+    private connection: Connection,
+    private wallet: WalletContextState,
+    private program: Program<typeof IDL> = new Program(IDL, PROGRAM_ID)
+  ) {}
 
   async createStablecoin(params: CreateStablecoinParams): Promise<string> {
     if (!this.wallet?.publicKey) {
@@ -43,8 +32,8 @@ export class StablecoinProgram {
     }
 
     try {
-      // Create the create stablecoin instruction
-      const createStablecoinIx = await this.program.methods
+      // Create the instruction
+      const ix = await this.program.methods
         .createStablecoin(
           params.name,
           params.symbol,
@@ -63,14 +52,37 @@ export class StablecoinProgram {
         })
         .instruction();
 
-      // Create and send transaction
-      const transaction = new Transaction().add(createStablecoinIx);
-      
-      const signature = await this.wallet.sendTransaction(transaction, this.connection, {
-        signers: [params.stablecoinData, params.stablecoinMint]
-      });
-      
-      await this.connection.confirmTransaction(signature);
+      // Create transaction and add the instruction
+      const latestBlockhash = await this.connection.getLatestBlockhash();
+      const transaction = new Transaction({
+        feePayer: this.wallet.publicKey,
+        ...latestBlockhash,
+      }).add(ix);
+
+      // Partially sign with the stablecoin data and mint keypairs
+      transaction.partialSign(params.stablecoinData, params.stablecoinMint);
+
+      // Request wallet signature
+      const signed = await this.wallet.signTransaction?.(transaction);
+      if (!signed) {
+        throw new Error('Failed to sign transaction');
+      }
+
+      // Send and confirm transaction
+      const signature = await this.connection.sendRawTransaction(
+        signed.serialize(),
+        {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+          maxRetries: 3,
+        }
+      );
+
+      await this.connection.confirmTransaction({
+        signature,
+        ...latestBlockhash
+      }, 'confirmed');
+
       return signature;
 
     } catch (error) {
