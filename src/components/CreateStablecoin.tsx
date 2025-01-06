@@ -140,7 +140,7 @@ export const CreateStablecoin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!publicKey || !connection || loading) {
+    if (!publicKey || !connection) {
       toast.error('Please connect your wallet first');
       return;
     }
@@ -152,11 +152,8 @@ export const CreateStablecoin = () => {
       const stablecoinData = Keypair.generate();
       const stablecoinMint = Keypair.generate();
 
-      // Initialize StablecoinProgram
-      const program = new StablecoinProgram(
-        connection,
-        wallet as WalletContextState
-      );
+      // Initialize StablecoinProgram with connection and wallet
+      const program = new StablecoinProgram(connection, wallet);
 
       // Create the stablecoin
       const signature = await program.createStablecoin({

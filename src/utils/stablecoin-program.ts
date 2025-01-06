@@ -1,30 +1,27 @@
 import { Connection, PublicKey, Transaction, Keypair, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, MINT_SIZE, createInitializeMintInstruction, getMinimumBalanceForRentExemptMint } from '@solana/spl-token';
-import { Program, AnchorProvider, BN } from '@project-serum/anchor';
+import { Program, AnchorProvider, BN, Idl } from '@project-serum/anchor';
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { IDL } from './idl/stablecoin_factory';
-
-// Update this to use your deployed program ID
-const PROGRAM_ID = new PublicKey("CGnwq4D9qErCRjPujz5MVkMaixR8BLRACpAmLWsqoRRe");
-
-interface CreateStablecoinParams {
-  name: string;
-  symbol: string;
-  decimals: number;
-  iconUrl: string;
-  targetCurrency: string;
-  bondMint: PublicKey;
-  stablecoinData: Keypair;
-  stablecoinMint: Keypair;
-}
-
+import { PROGRAM_ID } from './constants';
 
 export class StablecoinProgram {
+  private program: Program<Idl>;
+
   constructor(
     private connection: Connection,
-    private wallet: WalletContextState,
-    private program: Program<typeof IDL> = new Program(IDL, PROGRAM_ID)
-  ) {}
+    private wallet: WalletContextState
+  ) {
+    // Create a custom provider
+    const provider = new AnchorProvider(
+      connection,
+      wallet as any,
+      { commitment: 'confirmed' }
+    );
+
+    // Initialize the program with the provider
+    this.program = new Program(IDL, PROGRAM_ID, provider);
+  }
 
   async createStablecoin(params: CreateStablecoinParams): Promise<string> {
     if (!this.wallet?.publicKey) {
@@ -157,4 +154,15 @@ export class StablecoinProgram {
       throw error;
     }
   }
+}
+
+export interface CreateStablecoinParams {
+  name: string;
+  symbol: string;
+  decimals: number;
+  iconUrl: string;
+  targetCurrency: string;
+  bondMint: PublicKey;
+  stablecoinData: Keypair;
+  stablecoinMint: Keypair;
 } 
