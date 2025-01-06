@@ -12,14 +12,16 @@ export class StablecoinProgram {
     private connection: Connection,
     private wallet: WalletContextState
   ) {
-    // Create a custom provider
+    if (!PROGRAM_ID) {
+      throw new Error('Program ID not configured');
+    }
+
     const provider = new AnchorProvider(
       connection,
       wallet as any,
-      { commitment: 'confirmed' }
+      { commitment: 'confirmed', preflightCommitment: 'confirmed' }
     );
 
-    // Initialize the program with the provider
     this.program = new Program(IDL, PROGRAM_ID, provider);
   }
 
@@ -29,56 +31,65 @@ export class StablecoinProgram {
     }
 
     try {
-      // Create the instruction
-      const ix = await this.program.methods
-        .createStablecoin(
-          params.name,
-          params.symbol,
-          params.decimals,
-          params.iconUrl,
-          params.targetCurrency
-        )
-        .accounts({
-          authority: this.wallet.publicKey,
-          stablecoinData: params.stablecoinData.publicKey,
-          stablecoinMint: params.stablecoinMint.publicKey,
-          bondMint: params.bondMint,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: SYSVAR_RENT_PUBKEY,
+      // Generate a new keypair for the mint
+      const stablecoinMint = Keypair.generate();
+      
+      // Calculate the minimum rent for the mint account
+      const mintRent = await getMinimumBalanceForRentExemptMint(this.connection);
+
+      // Create the transaction
+      const tx = new Transaction();
+
+      // Add the create mint account instruction
+      tx.add(
+        SystemProgram.createAccount({
+          fromPubkey: this.wallet.publicKey,
+          newAccountPubkey: stablecoinMint.publicKey,
+          lamports: mintRent,
+          space: MINT_SIZE,
+          programId: TOKEN_PROGRAM_ID
         })
-        .instruction();
-
-      // Create transaction and add the instruction
-      const latestBlockhash = await this.connection.getLatestBlockhash();
-      const transaction = new Transaction({
-        feePayer: this.wallet.publicKey,
-        ...latestBlockhash,
-      }).add(ix);
-
-      // Partially sign with the stablecoin data and mint keypairs
-      transaction.partialSign(params.stablecoinData, params.stablecoinMint);
-
-      // Request wallet signature
-      const signed = await this.wallet.signTransaction?.(transaction);
-      if (!signed) {
-        throw new Error('Failed to sign transaction');
-      }
-
-      // Send and confirm transaction
-      const signature = await this.connection.sendRawTransaction(
-        signed.serialize(),
-        {
-          skipPreflight: false,
-          preflightCommitment: 'confirmed',
-          maxRetries: 3,
-        }
       );
 
-      await this.connection.confirmTransaction({
-        signature,
-        ...latestBlockhash
-      }, 'confirmed');
+      // Add the initialize mint instruction
+      tx.add(
+        createInitializeMintInstruction(
+          stablecoinMint.publicKey,
+          params.decimals,
+          this.wallet.publicKey,
+          this.wallet.publicKey,
+          TOKEN_PROGRAM_ID
+        )
+      );
+
+      // Add the create stablecoin instruction
+      tx.add(
+        await this.program.methods
+          .createStablecoin(
+            params.name,
+            params.symbol,
+            params.decimals,
+            params.iconUrl,
+            params.targetCurrency
+          )
+          .accounts({
+            authority: this.wallet.publicKey,
+            stablecoinData: params.stablecoinData.publicKey,
+            stablecoinMint: stablecoinMint.publicKey,
+            bondMint: params.bondMint,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .instruction()
+      );
+
+      // Sign with the mint keypair
+      tx.partialSign(stablecoinMint);
+
+      // Send and confirm transaction
+      const signature = await this.wallet.sendTransaction(tx, this.connection);
+      await this.connection.confirmTransaction(signature);
 
       return signature;
 

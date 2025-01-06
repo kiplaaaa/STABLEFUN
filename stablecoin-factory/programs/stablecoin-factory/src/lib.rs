@@ -12,7 +12,6 @@ const MAX_NAME_LENGTH: usize = 32;
 const MAX_SYMBOL_LENGTH: usize = 8;
 const MAX_ICON_URL_LENGTH: usize = 128;
 const MAX_TARGET_CURRENCY_LENGTH: usize = 16;
-const EXPECTED_BOND_MINT: &str = "YOUR_BOND_MINT_ADDRESS";
 const EXPECTED_ORACLE_FEED: &str = "YOUR_ORACLE_FEED_ADDRESS";
 
 #[program]
@@ -27,6 +26,11 @@ pub mod stablecoin_factory {
         icon_url: String,
         target_currency: String,
     ) -> Result<()> {
+        msg!("Creating stablecoin with params:");
+        msg!("Name: {}", name);
+        msg!("Symbol: {}", symbol);
+        msg!("Bond mint: {}", ctx.accounts.bond_mint.key());
+        
         msg!("Creating stablecoin with name: {}", name);
 
         // Add validation
@@ -35,10 +39,7 @@ pub mod stablecoin_factory {
         require!(!symbol.is_empty() && symbol.len() <= MAX_SYMBOL_LENGTH, ErrorCode::InvalidSymbol);
         require!(!icon_url.is_empty() && icon_url.len() <= MAX_ICON_URL_LENGTH, ErrorCode::InvalidIconUrl);
         require!(!target_currency.is_empty() && target_currency.len() <= MAX_TARGET_CURRENCY_LENGTH, ErrorCode::InvalidCurrency);
-        require!(
-            ctx.accounts.bond_mint.key() == Pubkey::from_str(EXPECTED_BOND_MINT).unwrap(),
-            ErrorCode::InvalidBondMint
-        );
+        require!(ctx.accounts.bond_mint.is_initialized, ErrorCode::InvalidBondMint);
 
         // Initialize the stablecoin data account
         let stablecoin_data = &mut ctx.accounts.stablecoin_data;
@@ -162,7 +163,6 @@ pub struct CreateStablecoin<'info> {
         payer = authority,
         mint::decimals = decimals,
         mint::authority = authority.key(),
-        mint::freeze_authority = authority.key()
     )]
     pub stablecoin_mint: Account<'info, Mint>,
 

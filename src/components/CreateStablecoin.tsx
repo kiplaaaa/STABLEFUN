@@ -140,15 +140,15 @@ export const CreateStablecoin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!publicKey || !connection) {
-      toast.error('Please connect your wallet first');
-      return;
-    }
-    
     try {
       setLoading(true);
       
-      // Create keypairs for the new accounts
+      // Add validation
+      if (!formData.name || !formData.symbol || !formData.bondMint) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      // Create keypairs first
       const stablecoinData = Keypair.generate();
       const stablecoinMint = Keypair.generate();
 
@@ -167,20 +167,11 @@ export const CreateStablecoin = () => {
         stablecoinMint,
       });
 
-      toast.success('Stablecoin created successfully!');
       console.log('Transaction signature:', signature);
-      
-      // Reset form
-      setFormData({
-        name: '',
-        symbol: '',
-        currency: 'USD',
-        iconUrl: '',
-        bondMint: '',
-      });
+      toast.success('Stablecoin created successfully!');
       
     } catch (error) {
-      console.error('Error creating stablecoin:', error);
+      console.error('Error:', error);
       toast.error(getErrorMessage(error));
     } finally {
       setLoading(false);
