@@ -6,9 +6,13 @@ import { CreateStablecoin } from "./components/CreateStablecoin";
 import { StablecoinList } from "./components/StablecoinList";
 
 function App() {
-  const [stablecoins, setStablecoins] = useState([]);
-
-  const addStablecoin = (newStablecoin) => {
+  const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
+  interface Stablecoin {
+    name: string;
+    symbol: string;
+    value: number;
+  }
+  const addStablecoin = (newStablecoin: Stablecoin) => {
     setStablecoins((prevStablecoins) => [...prevStablecoins, newStablecoin]);
   };
 
@@ -42,8 +46,8 @@ function App() {
           <Features />
           
           <div className="space-y-12">
-            <CreateStablecoin addStablecoin={addStablecoin} />
-            <StablecoinList stablecoins={stablecoins} />
+            <CreateStablecoin addStablecoin={(newStablecoin: any) => addStablecoin(newStablecoin as any)} />
+            <StablecoinList stablecoins={stablecoins as any} />
           </div>
         </div>
       </main>
