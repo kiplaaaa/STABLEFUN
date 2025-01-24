@@ -19,7 +19,7 @@ interface Bond {
   symbol: string;
 }
 
-export const CreateStablecoin = () => {
+export const CreateStablecoin = ({ addStablecoin }) => {
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
@@ -225,6 +225,22 @@ export const CreateStablecoin = () => {
         stablecoinData,
         stablecoinMint,
         userBondAccount // Pass the actual token account pubkey
+      });
+
+      // Add the new stablecoin to the state
+      addStablecoin({
+        mint: stablecoinMint.publicKey.toString(),
+        name: formData.name,
+        symbol: formData.symbol,
+        currency: formData.currency,
+        icon: formData.iconUrl || 'https://example.com/icon.png',
+        supply: 0, // Initial supply can be set to 0 or fetched later
+        bondMint: bondMintPubkey.toString(),
+        apy: "8.5", // Example APY, adjust as needed
+        tokensAvailable: 0, // Initial tokens available
+        costPerToken: 1.0, // Example cost per token
+        startDate: new Date().toLocaleString(), // Current date as start date
+        tvl: "$0" // Initial TVL
       });
 
       toast.success('Stablecoin created successfully!');

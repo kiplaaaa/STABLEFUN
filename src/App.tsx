@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from "./components/Header";
 import { Features } from "./components/Features";
@@ -5,6 +6,12 @@ import { CreateStablecoin } from "./components/CreateStablecoin";
 import { StablecoinList } from "./components/StablecoinList";
 
 function App() {
+  const [stablecoins, setStablecoins] = useState([]);
+
+  const addStablecoin = (newStablecoin) => {
+    setStablecoins((prevStablecoins) => [...prevStablecoins, newStablecoin]);
+  };
+
   return (
     <div className="min-h-screen bg-[#111111]">
       <Header />
@@ -35,8 +42,8 @@ function App() {
           <Features />
           
           <div className="space-y-12">
-            <CreateStablecoin />
-            <StablecoinList />
+            <CreateStablecoin addStablecoin={addStablecoin} />
+            <StablecoinList stablecoins={stablecoins} />
           </div>
         </div>
       </main>

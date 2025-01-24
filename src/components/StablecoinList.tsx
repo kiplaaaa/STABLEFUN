@@ -29,11 +29,10 @@ interface WalletContextState {
   sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
 }
 
-export const StablecoinList = () => {
+export const StablecoinList = ({ stablecoins }) => {
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey, sendTransaction } = wallet;
-  const [stablecoins, setStablecoins] = useState<Stablecoin[]>([]);
   const [loading, setLoading] = useState(true);
   const [transacting, setTransacting] = useState<TokenAction | null>(null);
   const [amount, setAmount] = useState('');
