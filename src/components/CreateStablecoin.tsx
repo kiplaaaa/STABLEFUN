@@ -19,7 +19,7 @@ interface Bond {
   symbol: string;
 }
 
-export const CreateStablecoin = ({ addStablecoin }) => {
+export const CreateStablecoin = ({ addStablecoin }: { addStablecoin: any }) => {
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;

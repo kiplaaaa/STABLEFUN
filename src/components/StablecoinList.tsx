@@ -29,7 +29,7 @@ interface WalletContextState {
   sendTransaction: (transaction: Transaction, connection: Connection) => Promise<string>;
 }
 
-export const StablecoinList = ({ stablecoins }) => {
+export const StablecoinList = ({ stablecoins }: { stablecoins: Stablecoin[] }) => {
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey, sendTransaction } = wallet;
@@ -44,7 +44,7 @@ export const StablecoinList = ({ stablecoins }) => {
       setLoading(true);
       try {
         // Implement your fetch logic here
-        setStablecoins([]); // Replace with actual fetch
+        fetchStablecoins(); // Replace with actual fetch
       } catch (error) {
         console.error('Failed to fetch stablecoins:', error);
         toast.error('Failed to load stablecoins');
@@ -186,14 +186,14 @@ export const StablecoinList = ({ stablecoins }) => {
               className="flex-1 bg-[#1C1C1C] border border-[#CDFE00] text-[#CDFE00] font-medium py-2 px-4 rounded 
                          hover:bg-[#CDFE00] hover:text-black transition-all"
             >
-              BOND DETAILS
+              MINT TOKEN
             </button>
             <button
               onClick={() => handleAction(coin, 'redeem')}
               className="flex-1 bg-[#CDFE00] text-black font-medium py-2 px-4 rounded 
                          hover:bg-[#b8e400] transition-all"
             >
-              SELECT
+              REDEEM TOKEN
             </button>
           </div>
 
