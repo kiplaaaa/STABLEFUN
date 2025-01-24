@@ -84,7 +84,7 @@ export class StablecoinProgram {
           rent: SYSVAR_RENT_PUBKEY,
         })
         .signers([params.stablecoinData, params.stablecoinMint])
-        .rpc();
+        // .rpc();
 
       return tx;
     } catch (error) {
