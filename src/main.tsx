@@ -7,7 +7,6 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { WalletContextProvider } from './context/WalletContextProvider';
 import App from './App';
-import { StablecoinsPage } from './pages/StablecoinsPage';
 
 // Set buffer for wallet compatibility
 window.Buffer = Buffer;
@@ -17,10 +16,6 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <App />,
-  },
-  {
-    path: "/stablecoins",
-    element: <StablecoinsPage />,
   },
 ]);
 
