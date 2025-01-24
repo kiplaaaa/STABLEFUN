@@ -1,7 +1,10 @@
 // #![cfg_attr(feature = "program", compiler_builtins::stack_size = "8192")]
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount};
+use anchor_spl::{
+    token::{Mint as Token22Mint, TokenAccount as Token22Account, Token},
+    token_2022::{self as token22, Token2022},
+};
 use switchboard_solana::AggregatorAccountData;
 use std::str::FromStr;
 
@@ -90,10 +93,10 @@ pub mod stablecoin_factory {
         let token_amount = (amount as f64 * exchange_rate) as u64;
         require!(token_amount >= minimum_tokens_out, ErrorCode::SlippageExceeded);
 
-        token::transfer(
+        token22::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
-                token::Transfer {
+                token22::Transfer {
                     from: ctx.accounts.user_bond_account.to_account_info(),
                     to: ctx.accounts.program_bond_account.to_account_info(),
                     authority: ctx.accounts.authority.to_account_info(),
@@ -102,10 +105,10 @@ pub mod stablecoin_factory {
             amount,
         )?;
 
-        token::mint_to(
+        token22::mint_to(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
-                token::MintTo {
+                token22::MintTo {
                     mint: ctx.accounts.stablecoin_mint.to_account_info(),
                     to: ctx.accounts.user_token_account.to_account_info(),
                     authority: ctx.accounts.authority.to_account_info(),
@@ -133,10 +136,10 @@ pub mod stablecoin_factory {
         require!(exchange_rate > 0.0, ErrorCode::InvalidExchangeRate);
 
         let bond_amount = (amount as f64 / exchange_rate) as u64;
-        token::burn(
+        token22::burn(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
-                token::Burn {
+                token22::Burn {
                     mint: ctx.accounts.stablecoin_mint.to_account_info(),
                     from: ctx.accounts.user_token_account.to_account_info(),
                     authority: ctx.accounts.authority.to_account_info(),
@@ -145,10 +148,10 @@ pub mod stablecoin_factory {
             amount,
         )?;
 
-        token::transfer(
+        token22::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
-                token::Transfer {
+                token22::Transfer {
                     from: ctx.accounts.program_bond_account.to_account_info(),
                     to: ctx.accounts.user_bond_account.to_account_info(),
                     authority: ctx.accounts.authority.to_account_info(),
@@ -190,25 +193,25 @@ pub struct CreateStablecoin<'info> {
         mint::decimals = decimals,
         mint::authority = authority.key(),
     )]
-    pub stablecoin_mint: Account<'info, Mint>,
+    pub stablecoin_mint: Account<'info, Token22Mint>,
 
-    pub bond_mint: Account<'info, Mint>,
+    pub bond_mint: Account<'info, Token22Mint>,
 
     #[account(
         mut,
         associated_token::mint = bond_mint,
         associated_token::authority = authority
     )]
-    pub user_bond_account: Account<'info, TokenAccount>,
+    pub user_bond_account: Account<'info, Token22Account>,
 
     #[account(
         mut,
         seeds = [b"bond", bond_mint.key().as_ref()],
         bump
     )]
-    pub program_bond_account: Account<'info, TokenAccount>,
+    pub program_bond_account: Account<'info, Token22Account>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
@@ -222,24 +225,24 @@ pub struct MintTokens<'info> {
     pub stablecoin_data: Account<'info, StablecoinData>,
 
     #[account(mut)]
-    pub stablecoin_mint: Account<'info, Mint>,
+    pub stablecoin_mint: Account<'info, Token22Mint>,
 
     #[account(
         mut,
         constraint = user_token_account.owner == authority.key(),
         constraint = user_token_account.mint == stablecoin_mint.key()
     )]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Account<'info, Token22Account>,
 
     #[account(
         mut,
         constraint = user_bond_account.owner == authority.key(),
         constraint = user_bond_account.mint == stablecoin_data.bond_mint
     )]
-    pub user_bond_account: Account<'info, TokenAccount>,
+    pub user_bond_account: Account<'info, Token22Account>,
 
     #[account(mut)]
-    pub program_bond_account: Account<'info, TokenAccount>,
+    pub program_bond_account: Account<'info, Token22Account>,
 
     #[account(
         constraint = {
@@ -249,7 +252,7 @@ pub struct MintTokens<'info> {
     )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
 }
 
 #[derive(Accounts)]
@@ -261,16 +264,16 @@ pub struct RedeemTokens<'info> {
     pub stablecoin_data: Account<'info, StablecoinData>,
 
     #[account(mut)]
-    pub stablecoin_mint: Account<'info, Mint>,
+    pub stablecoin_mint: Account<'info, Token22Mint>,
 
     #[account(mut)]
-    pub user_bond_account: Account<'info, TokenAccount>,
+    pub user_bond_account: Account<'info, Token22Account>,
 
     #[account(mut)]
-    pub program_bond_account: Account<'info, TokenAccount>,
+    pub program_bond_account: Account<'info, Token22Account>,
 
     #[account(mut)]
-    pub user_token_account: Account<'info, TokenAccount>,
+    pub user_token_account: Account<'info, Token22Account>,
 
     #[account(
         constraint = {
@@ -280,7 +283,7 @@ pub struct RedeemTokens<'info> {
     )]
     pub oracle_feed: AccountLoader<'info, AggregatorAccountData>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
 }
 
 #[account]
