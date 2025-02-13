@@ -8,7 +8,7 @@ use anchor_spl::{
 use switchboard_solana::AggregatorAccountData;
 use std::str::FromStr;
 
-declare_id!("A6ZS2FHTzLuB6vP1XwDbb9TEtFdGZwT86dEJcGXmQPeU");
+declare_id!("9NyzT1Bo46otPDsAux9Rc5kBNBPJ4wnuEkFhSATwriCg");
 
 // Constants
 const MAX_NAME_LENGTH: usize = 32;
